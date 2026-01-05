@@ -1,0 +1,126 @@
+<div class="container">
+    <div class="card shadow">
+        <div class="card-header bg-danger text-white">
+            <h4>🚨 Report a Security Incident</h4>
+        </div>
+        <div class="card-body">
+            
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-success">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="POST" id="incidentForm">
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label class="form-label">Issue Title</label>
+                    <input type="text" id="id_title" name="title" class="form-control" placeholder="e.g., Mouse not working" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Description of Incident</label>
+                    <textarea id="id_description" name="description" class="form-control" rows="4" placeholder="Describe what happened..." required></textarea>
+                </div>
+
+                <div id="suggestion-box" class="alert alert-warning border-warning mt-3" style="display: none;">
+                    <h5>⚠️ Possible Solution Found!</h5>
+                    <p>Before you submit, please try this fix:</p>
+                    <div class="p-3 bg-white border rounded mb-2">
+                        💡 <strong><span id="suggestion-text"></span></strong>
+                    </div>
+                    
+                    <button type="button" id="btn-ack" class="btn btn-warning w-100 fw-bold mt-2" onclick="showOptions()">
+                        👀 I will try this fix now
+                    </button>
+                </div>
+
+                <div id="final-options" class="row mt-3" style="display: none;">
+                    <div class="col-md-6">
+                        <button type="submit" name="action_type" value="solved" class="btn btn-success w-100">
+                            ✅ It Worked! (Issue Solved)
+                        </button>
+                    </div>
+                    <div class="col-md-6 mt-2 mt-md-0">
+                        <button type="submit" name="action_type" value="submit" class="btn btn-outline-danger w-100">
+                            ❌ Still Broken (Submit Ticket)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-4" id="default-submit">
+                    <button type="submit" name="action_type" value="submit" class="btn btn-danger w-100">
+                        Submit Report
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const titleInput = document.getElementById('id_title');
+    const descInput = document.getElementById('id_description');
+    
+    // The Sections
+    const suggestionBox = document.getElementById('suggestion-box');
+    const suggestionText = document.getElementById('suggestion-text');
+    const finalOptions = document.getElementById('final-options');
+    const defaultSubmit = document.getElementById('default-submit');
+    const btnAck = document.getElementById('btn-ack');
+
+    let suggestionActive = false;
+
+    // Knowledge Base
+    const rules = [
+        { keywords: ['mouse', 'cursor'], tip: "Check if the batteries are dead or the USB is loose." },
+        { keywords: ['wifi', 'internet'], tip: "Try turning your Wi-Fi off and on again." },
+        { keywords: ['printer', 'paper'], tip: "Check if the printer has paper and is turned on." }
+    ];
+
+    function checkInput() {
+        // If we already showed the options, don't reset everything while they type
+        if (finalOptions.style.display === 'flex') return;
+
+        const text = (titleInput.value + " " + descInput.value).toLowerCase();
+        let foundTip = "";
+
+        for (let rule of rules) {
+            if (rule.keywords.some(keyword => text.includes(keyword))) {
+                foundTip = rule.tip;
+                break;
+            }
+        }
+
+        if (foundTip) {
+            // Keyword Found: Show Box, Hide Default Submit
+            suggestionText.innerText = foundTip;
+            suggestionBox.style.display = 'block';     // Show Yellow Box
+            btnAck.style.display = 'block';            // Show "I will try this"
+            defaultSubmit.style.display = 'none';      // HIDE Normal Submit
+            finalOptions.style.display = 'none';       // Ensure Stage 2 is hidden
+        } else {
+            // No Keyword: Show Normal Interface
+            suggestionBox.style.display = 'none';
+            defaultSubmit.style.display = 'block';     // Show Normal Submit
+            finalOptions.style.display = 'none';
+        }
+    }
+
+    // Step 2: User clicked "I will try this fix"
+    function showOptions() {
+        btnAck.style.display = 'none';           // Hide the Acknowledge button
+        finalOptions.style.display = 'flex';     // Show "Solved" vs "Submit"
+    }
+
+    titleInput.addEventListener('input', checkInput);
+    descInput.addEventListener('input', checkInput);
+    
+    // Auto-hide messages
+    setTimeout(function() {
+        let alerts = document.querySelectorAll('.alert-success');
+        alerts.forEach(function(alert) { alert.remove(); });
+    }, 3000); 
+</script>
