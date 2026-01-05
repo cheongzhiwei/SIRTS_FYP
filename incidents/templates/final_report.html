@@ -1,3 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Report Security Incident</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+  <div class="container">
+    <a class="navbar-brand" href="#">🛡️ SIRTS Security</a>
+    
+    <div class="d-flex align-items-center">
+        <a href="{% url 'user_history' %}" class="btn btn-outline-light me-2">📂 My History</a>
+        
+        <a href="#" class="btn btn-outline-warning position-relative">
+            🎫 My Tickets  {% if pending_count > 0 %}
+            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                {{ pending_count }}
+                <span class="visually-hidden">unread messages</span>
+            </span>
+            {% endif %}
+        </a>
+    </div>
+  </div>
+</nav>
+
 <div class="container">
     <div class="card shadow">
         <div class="card-header bg-danger text-white">
@@ -11,7 +38,7 @@
                 {% endfor %}
             {% endif %}
 
-            <form method="POST" id="incidentForm">
+            <form method="POST">
                 {% csrf_token %}
                 
                 <div class="mb-3">
@@ -63,15 +90,11 @@
 <script>
     const titleInput = document.getElementById('id_title');
     const descInput = document.getElementById('id_description');
-    
-    // The Sections
     const suggestionBox = document.getElementById('suggestion-box');
     const suggestionText = document.getElementById('suggestion-text');
     const finalOptions = document.getElementById('final-options');
     const defaultSubmit = document.getElementById('default-submit');
     const btnAck = document.getElementById('btn-ack');
-
-    let suggestionActive = false;
 
     // Knowledge Base
     const rules = [
@@ -81,8 +104,7 @@
     ];
 
     function checkInput() {
-        // If we already showed the options, don't reset everything while they type
-        if (finalOptions.style.display === 'flex') return;
+        if (finalOptions.style.display === 'flex') return; // Don't reset if already showing options
 
         const text = (titleInput.value + " " + descInput.value).toLowerCase();
         let foundTip = "";
@@ -95,32 +117,26 @@
         }
 
         if (foundTip) {
-            // Keyword Found: Show Box, Hide Default Submit
             suggestionText.innerText = foundTip;
-            suggestionBox.style.display = 'block';     // Show Yellow Box
-            btnAck.style.display = 'block';            // Show "I will try this"
-            defaultSubmit.style.display = 'none';      // HIDE Normal Submit
-            finalOptions.style.display = 'none';       // Ensure Stage 2 is hidden
+            suggestionBox.style.display = 'block';
+            btnAck.style.display = 'block';
+            defaultSubmit.style.display = 'none';
+            finalOptions.style.display = 'none';
         } else {
-            // No Keyword: Show Normal Interface
             suggestionBox.style.display = 'none';
-            defaultSubmit.style.display = 'block';     // Show Normal Submit
+            defaultSubmit.style.display = 'block';
             finalOptions.style.display = 'none';
         }
     }
 
-    // Step 2: User clicked "I will try this fix"
     function showOptions() {
-        btnAck.style.display = 'none';           // Hide the Acknowledge button
-        finalOptions.style.display = 'flex';     // Show "Solved" vs "Submit"
+        btnAck.style.display = 'none';
+        finalOptions.style.display = 'flex';
     }
 
     titleInput.addEventListener('input', checkInput);
     descInput.addEventListener('input', checkInput);
-    
-    // Auto-hide messages
-    setTimeout(function() {
-        let alerts = document.querySelectorAll('.alert-success');
-        alerts.forEach(function(alert) { alert.remove(); });
-    }, 3000); 
 </script>
+
+</body>
+</html>
