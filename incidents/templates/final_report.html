@@ -21,6 +21,19 @@
             </span>
             {% endif %}
         </a>
+
+        <form action="{% url 'logout' %}" method="post" class="d-inline ms-2">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger">
+                🚪 Logout
+            </button>
+        </form>
+        <form action="{% url 'logout' %}" method="post" class="d-inline ms-2">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-danger">
+                Logout ↪
+            </button>
+        </form>
     </div>
   </div>
 </nav>

@@ -15,3 +15,21 @@ class Incident(models.Model):
 
     def __str__(self):
         return f"{self.title} - {self.reporter.username}"
+
+class EmployeeProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    department = models.CharField(max_length=100, choices=[
+        ('HR', 'Human Resources'),
+        ('IT', 'IT Support'),
+        ('FIN', 'Finance'),
+        ('OPS', 'Operations'),
+        ('SAL', 'Sales'),
+    ], default='OPS')
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    
+    # 💻 Laptop Details
+    laptop_model = models.CharField(max_length=100, blank=True, null=True, help_text="e.g. Dell Latitude 5420")
+    laptop_serial = models.CharField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.department}"
