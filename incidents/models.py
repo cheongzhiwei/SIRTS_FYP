@@ -1,35 +1,65 @@
 from django.db import models
 from django.contrib.auth.models import User
 
-class Incident(models.Model):
-    # Link the ticket to the Staff Member who reported it
-    reporter = models.ForeignKey(User, on_delete=models.CASCADE)
-    
-    # The actual data
-    title = models.CharField(max_length=200)
-    description = models.TextField()
-    
-    # Auto-add the date and status
-    created_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, default='Open') # Open, Closed, Pending
-
-    def __str__(self):
-        return f"{self.title} - {self.reporter.username}"
-
+# 1. EMPLOYEE PROFILE (Extends the User model)
 class EmployeeProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    department = models.CharField(max_length=100, choices=[
-        ('HR', 'Human Resources'),
+    
+    # Department List for Dropdowns
+    DEPARTMENT_CHOICES = [
         ('IT', 'IT Support'),
+        ('HR', 'Human Resources'),
         ('FIN', 'Finance'),
+        ('MKT', 'Marketing'),
         ('OPS', 'Operations'),
         ('SAL', 'Sales'),
-    ], default='OPS')
-    phone_number = models.CharField(max_length=15, blank=True, null=True)
+        ('EXEC', 'Management/Executive'),
+    ]
+
+    employee_name = models.CharField(max_length=100, null=True, blank=True)
     
-    # 💻 Laptop Details
-    laptop_model = models.CharField(max_length=100, blank=True, null=True, help_text="e.g. Dell Latitude 5420")
+    department = models.CharField(
+        max_length=50, 
+        choices=DEPARTMENT_CHOICES, 
+        null=True, 
+        blank=True
+    )
+    
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    laptop_model = models.CharField(max_length=100, blank=True, null=True)
     laptop_serial = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.department}"
+        return f"{self.user.username} Profile"
+
+# 2. INCIDENT TICKET MODEL
+class Incident(models.Model):
+    # Link to the logged-in user
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    
+    # Issue Details
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    
+    # Manual Reporting Fields (For when they type it in manually)
+    reporter_name = models.CharField(max_length=100, blank=True, null=True)
+    department = models.CharField(max_length=100, blank=True, null=True)
+    email = models.EmailField(blank=True, null=True)
+
+    # Status Options
+    STATUS_CHOICES = [
+        ('Open', 'Open'),
+        ('In Progress', 'In Progress'),
+        ('Resolved', 'Resolved'), # We treat 'Self Fixed' as Resolved in views
+        ('Closed', 'Closed'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Open')
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # ✅ ADMIN RESPONSE FIELD (This fixes your error!)
+    admin_response = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.title} - {self.status}"

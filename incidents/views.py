@@ -1,131 +1,211 @@
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Q
-from .models import Incident
-from django.shortcuts import get_object_or_404
+from django.db.models import Q, Count
+from .models import Incident, EmployeeProfile
+from .forms import UserRegisterForm, IncidentForm, AdminTicketUpdateForm 
+# (Assuming you have these forms defined. If not, I've handled the logic below generically)
 
-# --- 1. REPORT INCIDENT (With Smart Logic) ---
+# --- 1. AUTHENTICATION VIEWS ---
+
+def register(request):
+    if request.method == 'POST':
+        form = UserRegisterForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            messages.success(request, f"Account created for {user.username}!")
+            return redirect('home')
+    else:
+        form = UserRegisterForm()
+    return render(request, 'register.html', {'form': form})
+
+def user_login(request):
+    if request.method == 'POST':
+        form = AuthenticationForm(request, data=request.POST)
+        if form.is_valid():
+            username = form.cleaned_data.get('username')
+            password = form.cleaned_data.get('password')
+            user = authenticate(username=username, password=password)
+            if user is not None:
+                login(request, user)
+                
+                # Redirect Admins to Dashboard, Users to Home
+                if user.is_superuser:
+                    return redirect('admin_dashboard')
+                else:
+                    return redirect('home')
+            else:
+                messages.error(request, "Invalid username or password.")
+        else:
+            messages.error(request, "Invalid username or password.")
+    else:
+        form = AuthenticationForm()
+    return render(request, 'login.html', {'form': form})
+
+def user_logout(request):
+    logout(request)
+    messages.info(request, "You have been logged out.")
+    return redirect('login')
+
+# --- 2. USER VIEWS ---
+
+@login_required
+def home(request):
+    """Shows the user their own ticket history."""
+    tickets = Incident.objects.filter(user=request.user).order_by('-created_at')
+    return render(request, 'home.html', {'tickets': tickets})
+
 @login_required
 def report_incident(request):
     if request.method == 'POST':
-        title_data = request.POST.get('title')
-        description_data = request.POST.get('description')
-        action_type = request.POST.get('action_type')  # <--- Check which button was clicked
-
-        # Determine Status
-        # If they clicked "Issue Solved", we mark it 'Self-Fixed'
-        if action_type == 'solved':
-            incident_status = 'Self-Fixed' 
-            message_text = "Great! We recorded that this issue was resolved automatically."
-        else:
-            incident_status = 'Open'
-            message_text = "Incident reported successfully!"
-
-        # Save to Database
-        Incident.objects.create(
-            reporter=request.user,
-            title=title_data,
-            description=description_data,
-            status=incident_status
-        )
+        # Get data
+        title = request.POST.get('title')
+        description = request.POST.get('description')
+        reporter_name = request.POST.get('reporter_name')
+        department = request.POST.get('department')
         
-        messages.success(request, message_text)
-        return redirect('report_incident')
+        # Get the status from the hidden input (Open OR Resolved)
+        status_value = request.POST.get('status', 'Open')
 
-    # Point to the new HTML file we made
-    return render(request, 'final_report.html')
+        # Create Ticket
+        Incident.objects.create(
+            user=request.user,
+            title=title,
+            description=description,
+            reporter_name=reporter_name,
+            department=department,
+            status=status_value  # Saves as 'Resolved' if they clicked 'Issue Solved'
+        )
 
-# --- 2. USER HISTORY (The Missing Part) ---
+        # Success Message
+        if status_value == 'Resolved':
+            messages.success(request, "🎉 Great! Your issue is recorded as Self-Fixed.")
+        else:
+            messages.success(request, "Ticket submitted successfully. IT will review it shortly.")
+
+        return redirect('home')
+
+    return render(request, 'report_incident.html')
+
+def is_admin(user):
+    return user.is_superuser
+
 @login_required
-def user_history(request):
-    # Fetch tickets created by THIS user
-    my_tickets = Incident.objects.filter(reporter=request.user).order_by('-created_at')
-    return render(request, 'user_history.html', {'tickets': my_tickets})
-
-# 📊 NEW ADMIN DASHBOARD VIEW
-@login_required
+@user_passes_test(is_admin)
 def admin_dashboard(request):
-    if not request.user.is_superuser:
-        return render(request, '403_forbidden.html')
+    # 1. Base Query
+    tickets = Incident.objects.all().order_by('-created_at')
+    
+    # --- 📊 CALCULATE STATS (5 BOXES) ---
+    total_all = Incident.objects.count()
+    count_open = Incident.objects.filter(status='Open').count()
+    
+    # ✅ FIX: Count ALL variations of "Self Fixed" / "Resolved"
+    count_self_fixed = Incident.objects.filter(
+        Q(status='Resolved') | 
+        Q(status='Self Fixed') | 
+        Q(status='Self-Fixed')
+    ).count()
+    
+    count_closed = Incident.objects.filter(status='Closed').count()
+    
+    # Calculate "Open Tickets for This Year"
+    current_year = timezone.now().year
+    count_year_open = Incident.objects.filter(created_at__year=current_year, status='Open').count()
 
-    # 1. SETUP DATES (Default to Current Week)
+    # --- 🔍 FILTERING LOGIC ---
+    
+    # 1. Date Shortcuts (Default = 'week')
+    date_filter = request.GET.get('date_range', 'week') 
     today = timezone.now().date()
-    # Find start of week (Monday)
-    start_of_week = today - timedelta(days=today.weekday())
     
-    # Get Date Filters from Search Form (or use default)
-    date_from = request.GET.get('date_from', start_of_week.strftime('%Y-%m-%d'))
-    date_to = request.GET.get('date_to', today.strftime('%Y-%m-%d'))
-    status_filter = request.GET.get('status', '')
-    issue_search = request.GET.get('issue', '')
-
-    # 2. BASE QUERY (Filter by Date Range)
-    # We filter ONLY by date first, because the "Boxes" need to respect the date range
-    tickets = Incident.objects.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
-
-    # 3. APPLY EXTRA FILTERS (Status & Issue Name)
-    if status_filter:
-        tickets = tickets.filter(status=status_filter)
+    start_date = None
+    if date_filter == 'today':
+        start_date = today
+    elif date_filter == 'week':
+        start_date = today - timedelta(days=7)
+    elif date_filter == 'month':
+        start_date = today - timedelta(days=30)
     
-    if issue_search:
-        tickets = tickets.filter(Q(title__icontains=issue_search) | Q(description__icontains=issue_search))
+    if start_date:
+        tickets = tickets.filter(created_at__date__gte=start_date)
 
-    # 4. CALCULATE BOX STATS (Based on the Date Range)
-    # Box 1: Open
-    count_open = tickets.filter(status='Open').count()
-    # Box 2: Self Fixed
-    count_fixed = tickets.filter(status='Self-Fixed').count()
-    # Box 3: Closed (We assume 'Closed' is a status we might add later, currently showing 0 or existing)
-    count_closed = tickets.filter(status='Closed').count() 
-    
-# ... inside admin_dashboard function ...
+    # 2. Manual Date Picker
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    if date_from and date_to:
+        tickets = tickets.filter(created_at__range=[date_from, date_to])
 
-    # 4. CALCULATE BOX STATS
-    count_open = tickets.filter(status='Open').count()
-    count_fixed = tickets.filter(status='Self-Fixed').count()
-    count_closed = tickets.filter(status='Closed').count()
-    
-    # NEW: Total Tickets (Filtered)
-    count_total = tickets.count()  # <--- ADD THIS LINE
+    # 3. Status Filter (✅ UPDATED LOGIC)
+    status = request.GET.get('status')
+    if status:
+        # If the URL asks for "Resolved" (Blue Box), we fetch ALL variations
+        if status == 'Resolved':
+            tickets = tickets.filter(
+                Q(status='Resolved') | 
+                Q(status='Self Fixed') | 
+                Q(status='Self-Fixed')
+            )
+        else:
+            tickets = tickets.filter(status=status)
 
-    # Box 4: Total Open THIS YEAR (Special KPI)
-    start_of_year = today.replace(month=1, day=1)
-    count_year_open = Incident.objects.filter(created_at__date__gte=start_of_year, status='Open').count()
+    # 4. Department Filter
+    department = request.GET.get('department')
+    if department:
+        tickets = tickets.filter(department=department)
+
+    # 5. Laptop Model Search
+    laptop = request.GET.get('laptop')
+    if laptop:
+        tickets = tickets.filter(user__employeeprofile__laptop_model__icontains=laptop)
+
+    # 6. Username Search
+    reporter = request.GET.get('reporter')
+    if reporter:
+        tickets = tickets.filter(user__username__icontains=reporter)
+
+    # --- 📝 PREPARE DROPDOWNS ---
+    # Try/Except block in case EmployeeProfile doesn't exist yet
+    try:
+        dept_choices = EmployeeProfile.DEPARTMENT_CHOICES
+    except AttributeError:
+        dept_choices = [] # Fallback if model not ready
 
     context = {
-        'tickets': tickets.order_by('-created_at'),
+        'tickets': tickets,
+        'total_all': total_all,
         'count_open': count_open,
-        'count_fixed': count_fixed,
+        'count_self_fixed': count_self_fixed, 
         'count_closed': count_closed,
-        'count_total': count_total,      # <--- ADD THIS to context
         'count_year_open': count_year_open,
-        'date_from': date_from,
-        'date_to': date_to,
-        'status_filter': status_filter,
-        'issue_search': issue_search
+        'current_date_range': date_filter,
+        'dept_choices': dept_choices,
     }
     return render(request, 'admin_dashboard.html', context)
 
 @login_required
+@user_passes_test(is_admin)
 def manage_ticket(request, ticket_id):
-    if not request.user.is_superuser:
-        return render(request, '403_forbidden.html')
-
-    # 1. Get the specific ticket
     ticket = get_object_or_404(Incident, id=ticket_id)
-
+    
     if request.method == 'POST':
-        # 2. Update Status
+        # Update Status
         new_status = request.POST.get('status')
-        admin_note = request.POST.get('admin_notes')
+        admin_note = request.POST.get('admin_note')
         
-        ticket.status = new_status
-        # We will add a field for notes later, for now just save status
+        if new_status:
+            ticket.status = new_status
+        if admin_note:
+            # You might want to append notes or just overwrite
+            ticket.admin_response = admin_note
+            
         ticket.save()
-        
+        messages.success(request, f"Ticket #{ticket.id} updated successfully.")
         return redirect('admin_dashboard')
 
     return render(request, 'manage_ticket.html', {'ticket': ticket})

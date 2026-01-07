@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIRTS Security</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .navbar-brand {
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        .nav-link {
+            position: relative; /* Needed for the badge positioning */
+        }
+        /* Ensures the footer sticks to the bottom if content is short */
+        footer {
+            margin-top: auto;
+        }
+    </style>
+</head>
+<body class="bg-light">
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4 shadow-sm">
+        <div class="container">
+            <a class="navbar-brand" href="{% url 'home' %}">
+                🛡️ SIRTS Security
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-content="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'home' %}">
+                            📂 My History
+                            
+                            {% if pending_count > 0 %}
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                {{ pending_count }}
+                                <span class="visually-hidden">unread incidents</span>
+                            </span>
+                            {% endif %}
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'report_incident' %}">Report Incident</a>
+                    </li>
+                </ul>
+                
+                <ul class="navbar-nav">
+                    {% if user.is_authenticated %}
+                        
+                        {% if user.is_superuser %}
+                        <li class="nav-item">
+                            <a class="nav-link text-warning fw-bold" href="{% url 'admin_dashboard' %}">
+                                📊 Admin Dashboard
+                            </a>
+                        </li>
+                        {% endif %}
+
+                        <li class="nav-item">
+                            <span class="nav-link text-white-50">
+                                Welcome, {{ user.username }}
+                            </span>
+                        </li>
+
+                        <li class="nav-item">
+                            <a class="nav-link btn btn-outline-secondary btn-sm ms-2 px-3" href="{% url 'logout' %}">
+                                Logout
+                            </a>
+                        </li>
+                    
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'login' %}">Login</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show shadow-sm" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}
+        {% endblock %}
+    </div>
+
+    <footer class="bg-white text-center py-3 mt-4 border-top">
+        <div class="container">
+            <small class="text-muted">© 2026 SIRTS Incident Response System</small>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>

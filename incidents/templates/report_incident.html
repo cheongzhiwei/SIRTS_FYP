@@ -1,119 +1,154 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Report Security Incident</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
+{% extends 'base.html' %}
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-  <div class="container">
-    <a class="navbar-brand" href="#">🛡️ SIRTS Security</a>
-    <div class="d-flex align-items-center">
-        <a href="{% url 'user_history' %}" class="btn btn-outline-light me-2">📂 My History</a>
-        
-        <a href="#" class="btn btn-outline-warning position-relative">
-            🚨 Incidents
-            {% if pending_count > 0 %}
-            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                {{ pending_count }}
-                <span class="visually-hidden">unread messages</span>
-            </span>
-            {% endif %}
-        </a>
-    </div>
-  </div>
-</nav>
-
-<div class="container">
-    <div class="card shadow">
-        <div class="card-header bg-danger text-white">
-            <h4>🚨 Report a Security Incident</h4>
-        </div>
-        <div class="card-body">
-            {% if messages %}
-                {% for message in messages %}
-                    <div class="alert alert-success">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-
-            <form method="POST">
-                {% csrf_token %}
-                <div class="mb-3">
-                    <label class="form-label">Issue Title</label>
-                    <input type="text" id="id_title" name="title" class="form-control" placeholder="e.g., Mouse not working" required>
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-dark text-white py-3">
+                    <h4 class="mb-0">Report an Incident</h4>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Description of Incident</label>
-                    <textarea id="id_description" name="description" class="form-control" rows="4" placeholder="Describe what happened..." required></textarea>
-                </div>
+                
+                <div class="card-body p-4">
+                    <form id="incidentForm" method="POST">
+                        {% csrf_token %}
 
-                <div id="suggestion-box" class="alert alert-warning border-warning mt-3" style="display: none;">
-                    <h5>⚠️ Wait a moment!</h5>
-                    <p><strong>Our system detects this might be a hardware issue.</strong></p>
-                    <p class="fs-5">💡 <span id="suggestion-text"></span></p>
-                    <hr>
-                    <small>Please try this fix before submitting a ticket.</small>
-                </div>
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">1. What type of issue are you facing?</label>
+                            <select id="issueType" name="title" class="form-select form-select-lg" required onchange="showSuggestions()">
+                                <option value="">-- Select Issue Category --</option>
+                                <option value="Internet/Wifi">Internet / Wifi Connection</option>
+                                <option value="Laptop Power">Laptop Power / Battery</option>
+                                <option value="Email Access">Email / Login Issue</option>
+                                <option value="Printer">Printer / Scanner</option>
+                                <option value="Software">Software / Application Crash</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
 
-                <div class="mt-4">
-                    <button type="button" id="btn-ack" class="btn btn-warning w-100 fw-bold" style="display: none;" onclick="acknowledgeTip()">
-                        ✅ I tried this fix, but it's still broken
-                    </button>
-                    <button type="submit" id="btn-submit" class="btn btn-danger w-100">
-                        Submit Report
-                    </button>
+                        <div id="suggestionBox" class="alert alert-warning d-none mb-4">
+                            <h5 class="alert-heading">💡 <span id="suggestionTitle">Try these quick fixes first:</span></h5>
+                            <hr>
+                            <ul id="suggestionList" class="mb-3">
+                                </ul>
+                            
+                            <div class="d-grid">
+                                <button type="button" id="ackBtn" class="btn btn-warning fw-bold" onclick="acknowledgeAndUnlock()">
+                                    ✅ I have tried these steps (Click to Proceed)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="formDescription" class="mb-4 opacity-50" style="pointer-events: none;">
+                            <label class="form-label fw-bold">2. Describe the details</label>
+                            <textarea name="description" class="form-control" rows="4" placeholder="Please describe exactly what happened..." required></textarea>
+                            
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <label class="small text-muted">Reporter</label>
+                                    <input type="text" name="reporter_name" value="{{ user.username }}" class="form-control bg-light" readonly>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="small text-muted">Department</label>
+                                    <input type="text" name="department" class="form-control" placeholder="e.g. IT">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="finalButtons" class="d-none border-top pt-4">
+                            <p class="text-center mb-3 fw-bold">Did the steps above solve your problem?</p>
+                            
+                            <div class="d-flex gap-3 justify-content-center">
+                                <button type="button" class="btn btn-success btn-lg px-4" onclick="submitAsSolved()">
+                                    🎉 Yes, Issue Solved!
+                                </button>
+
+                                <button type="submit" class="btn btn-primary btn-lg px-4">
+                                    📩 No, Submit Ticket
+                                </button>
+                            </div>
+                        </div>
+
+                        <input type="hidden" name="status" id="statusInput" value="Open">
+                    </form>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-    const titleInput = document.getElementById('id_title');
-    const descInput = document.getElementById('id_description');
-    const suggestionBox = document.getElementById('suggestion-box');
-    const suggestionText = document.getElementById('suggestion-text');
-    const btnSubmit = document.getElementById('btn-submit');
-    const btnAck = document.getElementById('btn-ack');
-    let suggestionIgnored = false;
+    const fixes = {
+        "Internet/Wifi": ["Toggle Airplane mode ON and OFF", "Forget the Wifi network and rejoin", "Restart your router/modem"],
+        "Laptop Power": ["Check if the charger light is on", "Try a different wall socket", "Hold power button for 30 seconds"],
+        "Email Access": ["Check if Caps Lock is ON", "Clear browser cache/cookies", "Try logging in from a different browser"],
+        "Printer": ["Check if printer has paper", "Restart the printer", "Check if you selected the correct printer name"],
+        "Software": ["Restart the application", "Check for software updates", "Reboot your computer"],
+        "Other": ["Please provide detailed description below", "Restart your device"]
+    };
 
-    const rules = [
-        { keywords: ['mouse', 'cursor', 'pointer'], tip: "Check if the batteries are dead or if the USB dongle is loose." },
-        { keywords: ['wifi', 'internet'], tip: "Try turning your Wi-Fi off and on again." }
-    ];
+    function showSuggestions() {
+        const issue = document.getElementById('issueType').value;
+        const box = document.getElementById('suggestionBox');
+        const list = document.getElementById('suggestionList');
+        
+        // Reset the form if category changes
+        resetFormState();
 
-    function checkInput() {
-        if (suggestionIgnored) return;
-        const text = (titleInput.value + " " + descInput.value).toLowerCase();
-        let foundTip = "";
-        for (let rule of rules) {
-            if (rule.keywords.some(keyword => text.includes(keyword))) {
-                foundTip = rule.tip;
-                break;
+        if (issue && fixes[issue]) {
+            // Inject suggestions
+            list.innerHTML = fixes[issue].map(step => `<li>${step}</li>`).join('');
+            box.classList.remove('d-none');
+        } else {
+            box.classList.add('d-none');
+            // If "Other" or empty, allow direct typing without ack
+            if(issue === "Other") {
+                 unlockForm();
+                 document.getElementById('finalButtons').classList.remove('d-none');
             }
         }
-        if (foundTip) {
-            suggestionText.innerText = foundTip;
-            suggestionBox.style.display = 'block';
-            btnSubmit.style.display = 'none';
-            btnAck.style.display = 'block';
-        } else {
-            suggestionBox.style.display = 'none';
-            btnSubmit.style.display = 'block';
-            btnAck.style.display = 'none';
-        }
     }
 
-    function acknowledgeTip() {
-        suggestionBox.style.display = 'none';
-        btnAck.style.display = 'none';
-        btnSubmit.style.display = 'block';
-        suggestionIgnored = true;
+    function acknowledgeAndUnlock() {
+        // Hide the ack button
+        document.getElementById('ackBtn').classList.add('d-none');
+        
+        // Change suggestion box look to show it's "Done"
+        document.getElementById('suggestionBox').classList.remove('alert-warning');
+        document.getElementById('suggestionBox').classList.add('alert-success');
+        document.getElementById('suggestionTitle').innerText = "✅ Steps Checked";
+
+        unlockForm();
+        
+        // Show Final Buttons
+        document.getElementById('finalButtons').classList.remove('d-none');
     }
 
-    titleInput.addEventListener('input', checkInput);
-    descInput.addEventListener('input', checkInput);
+    function unlockForm() {
+        const desc = document.getElementById('formDescription');
+        desc.classList.remove('opacity-50');
+        desc.style.pointerEvents = 'auto';
+    }
+
+    function resetFormState() {
+        // Re-lock form
+        const desc = document.getElementById('formDescription');
+        desc.classList.add('opacity-50');
+        desc.style.pointerEvents = 'none';
+        
+        // Hide buttons
+        document.getElementById('finalButtons').classList.add('d-none');
+        
+        // Reset Ack button
+        document.getElementById('ackBtn').classList.remove('d-none');
+        document.getElementById('suggestionBox').classList.add('alert-warning');
+        document.getElementById('suggestionBox').classList.remove('alert-success');
+    }
+
+    function submitAsSolved() {
+        // Change status to 'Resolved' (matches your Self-Fixed blue box)
+        document.getElementById('statusInput').value = 'Resolved';
+        document.getElementById('incidentForm').submit();
+    }
 </script>
-</body>
-</html>
+{% endblock %}

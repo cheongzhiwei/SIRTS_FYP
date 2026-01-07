@@ -1,8 +1,13 @@
 from .models import Incident
 
-def ticket_counts(request):
+def incident_monitor(request):
+    """
+    Counts ONLY 'Open' tickets that belong to the logged-in user.
+    """
     if request.user.is_authenticated:
-        # Count all tickets that are NOT 'Closed'
-        pending_count = Incident.objects.filter(status='Open').count()
-        return {'pending_count': pending_count}
-    return {}
+        # 1. Filter by User (request.user)
+        # 2. Filter by Status ('Open')
+        count = Incident.objects.filter(user=request.user, status='Open').count()
+        return {'pending_count': count}
+    
+    return {'pending_count': 0}
