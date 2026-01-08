@@ -15,7 +15,7 @@ class UserAdmin(BaseUserAdmin):
     inlines = [EmployeeProfileInline]
     
     # 1. Define exactly which columns to show
-    list_display = ('username', 'get_department', 'email') 
+    list_display = ('username', 'get_department', 'email')
 
     # 2. Add Filters and Search (Optional but recommended)
     list_filter = ('is_staff', 'employeeprofile__department')
