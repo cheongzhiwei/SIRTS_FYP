@@ -61,6 +61,8 @@ def home(request):
     return render(request, 'home.html', {'tickets': tickets})
 
 
+# incidents/views.py
+
 @login_required
 def report_incident(request):
     if request.method == 'POST':
@@ -75,6 +77,7 @@ def report_incident(request):
             description=description,
             status=status_value
         )
+        
         # Success Message
         if status_value == 'Resolved':
             messages.success(request, "🎉 Great! Your issue is recorded as Self-Fixed.")
