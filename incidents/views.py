@@ -60,28 +60,21 @@ def home(request):
     tickets = Incident.objects.filter(user=request.user).order_by('-created_at')
     return render(request, 'home.html', {'tickets': tickets})
 
+
 @login_required
 def report_incident(request):
     if request.method == 'POST':
-        # Get data
         title = request.POST.get('title')
-        description = request.POST.get('description')
-        reporter_name = request.POST.get('reporter_name')
-        department = request.POST.get('department')
-        
-        # Get the status from the hidden input (Open OR Resolved)
+        # If description is empty, it will save as "No details provided"
+        description = request.POST.get('description', 'No details provided')
         status_value = request.POST.get('status', 'Open')
 
-        # Create Ticket
         Incident.objects.create(
             user=request.user,
             title=title,
             description=description,
-            reporter_name=reporter_name,
-            department=department,
-            status=status_value  # Saves as 'Resolved' if they clicked 'Issue Solved'
+            status=status_value
         )
-
         # Success Message
         if status_value == 'Resolved':
             messages.success(request, "🎉 Great! Your issue is recorded as Self-Fixed.")

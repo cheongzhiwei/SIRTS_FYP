@@ -1,152 +1,120 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <div class="card shadow-sm border-0">
-                <div class="card-header bg-dark text-white py-3">
-                    <h4 class="mb-0">Report an Incident</h4>
-                </div>
-                
-                <div class="card-body p-4">
-                    <form id="incidentForm" method="POST">
-                        {% csrf_token %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-sm border-0 mt-5">
+            <div class="card-header bg-primary text-white py-3">
+                <h4 class="mb-0 text-center">New Incident Report</h4>
+            </div>
+            <div class="card-body p-4">
+                <form id="incidentForm" method="POST">
+                    {% csrf_token %}
 
-                        <div class="mb-4">
-                            <label class="form-label fw-bold">1. What type of issue are you facing?</label>
-                            <select id="issueType" name="title" class="form-select form-select-lg" required onchange="showSuggestions()">
-                                <option value="">-- Select Issue Category --</option>
-                                <option value="Internet/Wifi">Internet / Wifi Connection</option>
-                                <option value="Laptop Power">Laptop Power / Battery</option>
-                                <option value="Email Access">Email / Login Issue</option>
-                                <option value="Printer">Printer / Scanner</option>
-                                <option value="Software">Software / Application Crash</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold fs-5">What is the issue? (e.g. Printer jam, Wifi slow)</label>
+                        <input type="text" id="issueTitle" name="title" class="form-control form-control-lg border-2" 
+                               placeholder="Type issue here..." required onkeyup="scanKeywords()">
+                        <div class="form-text mt-2">The system will scan for keywords to suggest a quick fix.</div>
+                    </div>
 
-                        <div id="suggestionBox" class="alert alert-warning d-none mb-4">
-                            <h5 class="alert-heading">💡 <span id="suggestionTitle">Try these quick fixes first:</span></h5>
-                            <hr>
-                            <ul id="suggestionList" class="mb-3">
+                    <div id="solutionHub" class="card bg-light border-warning mb-4 d-none">
+                        <div class="card-body">
+                            <h5 class="text-warning mb-3">💡 Quick Fixes: Try these first</h5>
+                            <ul id="suggestionList" class="mb-4 fw-bold text-dark fs-6">
                                 </ul>
                             
                             <div class="d-grid">
-                                <button type="button" id="ackBtn" class="btn btn-warning fw-bold" onclick="acknowledgeAndUnlock()">
-                                    ✅ I have tried these steps (Click to Proceed)
+                                <button type="button" id="ackBtn" class="btn btn-warning btn-lg fw-bold shadow-sm" onclick="enableSubmission()">
+                                    ✅ I have checked these steps but the issue remains
                                 </button>
                             </div>
                         </div>
+                    </div>
 
-                        <div id="formDescription" class="mb-4 opacity-50" style="pointer-events: none;">
-                            <label class="form-label fw-bold">2. Describe the details</label>
-                            <textarea name="description" class="form-control" rows="4" placeholder="Please describe exactly what happened..." required></textarea>
-                            
-                            <div class="row mt-3">
-                                <div class="col-md-6">
-                                    <label class="small text-muted">Reporter</label>
-                                    <input type="text" name="reporter_name" value="{{ user.username }}" class="form-control bg-light" readonly>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="small text-muted">Department</label>
-                                    <input type="text" name="department" class="form-control" placeholder="e.g. IT">
-                                </div>
-                            </div>
+                    <div id="actionButtons" class="d-none border-top pt-4">
+                        <div class="text-center mb-4">
+                            <p class="text-muted">If the steps didn't work, click <strong>Submit Ticket</strong>. If you fixed it, click <strong>Issue Solved</strong>.</p>
                         </div>
-
-                        <div id="finalButtons" class="d-none border-top pt-4">
-                            <p class="text-center mb-3 fw-bold">Did the steps above solve your problem?</p>
-                            
-                            <div class="d-flex gap-3 justify-content-center">
-                                <button type="button" class="btn btn-success btn-lg px-4" onclick="submitAsSolved()">
-                                    🎉 Yes, Issue Solved!
-                                </button>
-
-                                <button type="submit" class="btn btn-primary btn-lg px-4">
-                                    📩 No, Submit Ticket
-                                </button>
-                            </div>
+                        <div class="d-flex justify-content-between gap-3">
+                            <button type="button" class="btn btn-success btn-lg flex-fill shadow-sm" onclick="submitAsSelfFixed()">
+                                🎉 Issue Solved
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-lg flex-fill shadow-sm">
+                                📩 Submit Ticket
+                            </button>
                         </div>
+                    </div>
 
-                        <input type="hidden" name="status" id="statusInput" value="Open">
-                    </form>
-                </div>
+                    <input type="hidden" name="status" id="statusInput" value="Open">
+                </form>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    const fixes = {
-        "Internet/Wifi": ["Toggle Airplane mode ON and OFF", "Forget the Wifi network and rejoin", "Restart your router/modem"],
-        "Laptop Power": ["Check if the charger light is on", "Try a different wall socket", "Hold power button for 30 seconds"],
-        "Email Access": ["Check if Caps Lock is ON", "Clear browser cache/cookies", "Try logging in from a different browser"],
-        "Printer": ["Check if printer has paper", "Restart the printer", "Check if you selected the correct printer name"],
-        "Software": ["Restart the application", "Check for software updates", "Reboot your computer"],
-        "Other": ["Please provide detailed description below", "Restart your device"]
-    };
+    // These are the finalized rules you approved
+    const rules = [
+        { 
+            keywords: ['wifi', 'internet', 'net', 'network', 'vpn'], 
+            suggestions: ['Turn Airplane Mode ON then OFF.', 'Check if you are on the CORRECT network.'] 
+        },
+        { 
+            keywords: ['print', 'printer', 'paper', 'jam'], 
+            suggestions: ['Check for a "Paper Jam" error.', 'Check "Printer Properties" tray settings.', 'Ensure you chose the CORRECT printer name.'] 
+        },
+        { 
+            keywords: ['lag', 'slow', 'freeze', 'hang', 'app'], 
+            suggestions: ['Close unused apps.', 'Restart the specific app.', 'Turn laptop OFF then ON.'] 
+        },
+        { 
+            keywords: ['screen', 'mouse', 'keyboard', 'hardware', 'monitor'], 
+            suggestions: ['Unplug and plug it back in.', 'Restart your laptop.', 'Try a different USB port.'] 
+        },
+        { 
+            keywords: ['charger', 'battery', 'cable', 'power', 'plug'], 
+            suggestions: ['Check if the charging light is ON.', 'Push the cables in firmly.', 'Try a different wall socket.'] 
+        }
+    ];
 
-    function showSuggestions() {
-        const issue = document.getElementById('issueType').value;
-        const box = document.getElementById('suggestionBox');
+    function scanKeywords() {
+        const title = document.getElementById('issueTitle').value.toLowerCase();
+        const hub = document.getElementById('solutionHub');
         const list = document.getElementById('suggestionList');
+        const actions = document.getElementById('actionButtons');
         
-        // Reset the form if category changes
-        resetFormState();
+        let found = false;
+        list.innerHTML = '';
 
-        if (issue && fixes[issue]) {
-            // Inject suggestions
-            list.innerHTML = fixes[issue].map(step => `<li>${step}</li>`).join('');
-            box.classList.remove('d-none');
+        // Only scan if title has at least 3 characters
+        if (title.length > 2) {
+            rules.forEach(rule => {
+                if (rule.keywords.some(k => title.includes(k))) {
+                    rule.suggestions.forEach(s => {
+                        list.innerHTML += `<li class="mb-2">${s}</li>`;
+                    });
+                    found = true;
+                }
+            });
+        }
+
+        if (found) {
+            hub.classList.remove('d-none');
+            actions.classList.add('d-none'); // Hide buttons until they acknowledge
         } else {
-            box.classList.add('d-none');
-            // If "Other" or empty, allow direct typing without ack
-            if(issue === "Other") {
-                 unlockForm();
-                 document.getElementById('finalButtons').classList.remove('d-none');
-            }
+            hub.classList.add('d-none');
+            // If no keywords found, show submission buttons immediately
+            actions.classList.remove('d-none');
         }
     }
 
-    function acknowledgeAndUnlock() {
-        // Hide the ack button
+    function enableSubmission() {
         document.getElementById('ackBtn').classList.add('d-none');
-        
-        // Change suggestion box look to show it's "Done"
-        document.getElementById('suggestionBox').classList.remove('alert-warning');
-        document.getElementById('suggestionBox').classList.add('alert-success');
-        document.getElementById('suggestionTitle').innerText = "✅ Steps Checked";
-
-        unlockForm();
-        
-        // Show Final Buttons
-        document.getElementById('finalButtons').classList.remove('d-none');
+        document.getElementById('actionButtons').classList.remove('d-none');
     }
 
-    function unlockForm() {
-        const desc = document.getElementById('formDescription');
-        desc.classList.remove('opacity-50');
-        desc.style.pointerEvents = 'auto';
-    }
-
-    function resetFormState() {
-        // Re-lock form
-        const desc = document.getElementById('formDescription');
-        desc.classList.add('opacity-50');
-        desc.style.pointerEvents = 'none';
-        
-        // Hide buttons
-        document.getElementById('finalButtons').classList.add('d-none');
-        
-        // Reset Ack button
-        document.getElementById('ackBtn').classList.remove('d-none');
-        document.getElementById('suggestionBox').classList.add('alert-warning');
-        document.getElementById('suggestionBox').classList.remove('alert-success');
-    }
-
-    function submitAsSolved() {
-        // Change status to 'Resolved' (matches your Self-Fixed blue box)
+    function submitAsSelfFixed() {
         document.getElementById('statusInput').value = 'Resolved';
         document.getElementById('incidentForm').submit();
     }
