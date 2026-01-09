@@ -3,10 +3,6 @@ from django.contrib.auth import views as auth_views # Add this line
 from . import views
 
 urlpatterns = [
-
-    # Update this line to use built-in views
-    path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
-    
     # Main user pages
     path('', views.home, name='home'), # ✅ This name must be 'home'
     path('report/', views.report_incident, name='report_incident'),

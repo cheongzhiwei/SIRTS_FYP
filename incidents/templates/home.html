@@ -1,45 +1,359 @@
 {% extends 'base.html' %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
+<div class="container-fluid py-4">
+    <!-- Header Section -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>My Incident History</h2>
-        <a href="{% url 'report_incident' %}" class="btn btn-primary">+ Report New Incident</a>
+        <div>
+            <h2 class="fw-bold mb-1">My Dashboard</h2>
+            <p class="text-muted mb-0">Welcome back, {{ user.username }}! Manage your incident reports here.</p>
+        </div>
     </div>
 
-    <div class="card shadow-sm">
+    <!-- Status Overview Cards -->
+    <div class="row mb-4 g-3">
+        <div class="col-md-3">
+            <a href="?status=Open&period={{ period_filter|default:'week' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}" class="text-decoration-none">
+                <div class="card border-0 shadow-sm h-100" style="cursor: pointer;">
+                    <div class="card-body text-center">
+                        <div class="text-danger mb-2">
+                            <i class="fas fa-exclamation-circle fa-2x"></i>
+                        </div>
+                        <h3 class="mb-0 fw-bold">{{ status_counts.open }}</h3>
+                        <small class="text-muted">Open Tickets</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="?status=Resolved&period={{ period_filter|default:'week' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}" class="text-decoration-none">
+                <div class="card border-0 shadow-sm h-100" style="cursor: pointer;">
+                    <div class="card-body text-center">
+                        <div class="text-primary mb-2">
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                        <h3 class="mb-0 fw-bold">{{ status_counts.resolved }}</h3>
+                        <small class="text-muted">Self Fixed</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="?status=Closed&period={{ period_filter|default:'week' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}" class="text-decoration-none">
+                <div class="card border-0 shadow-sm h-100" style="cursor: pointer;">
+                    <div class="card-body text-center">
+                        <div class="text-success mb-2">
+                            <i class="fas fa-clipboard-check fa-2x"></i>
+                        </div>
+                        <h3 class="mb-0 fw-bold">{{ status_counts.closed }}</h3>
+                        <small class="text-muted">Closed</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="?period={{ period_filter|default:'week' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}" class="text-decoration-none">
+                <div class="card border-0 shadow-sm h-100" style="cursor: pointer;">
+                    <div class="card-body text-center">
+                        <div class="text-secondary mb-2">
+                            <i class="fas fa-list fa-2x"></i>
+                        </div>
+                        <h3 class="mb-0 fw-bold">{{ status_counts.total }}</h3>
+                        <small class="text-muted">Total Tickets</small>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body bg-light">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Time Period</label>
+                    <div class="btn-group w-100 btn-group-sm">
+                        <button type="submit" name="period" value="today" onclick="clearDateFilters(this)" class="btn {% if request.GET.period == 'today' and not request.GET.from and not request.GET.to %}btn-primary{% else %}btn-outline-primary{% endif %}">Today</button>
+                        <button type="submit" name="period" value="week" onclick="clearDateFilters(this)" class="btn {% if request.GET.period == 'week' and not request.GET.from and not request.GET.to %}btn-primary{% else %}btn-outline-primary{% endif %}">Week</button>
+                        <button type="submit" name="period" value="month" onclick="clearDateFilters(this)" class="btn {% if request.GET.period == 'month' and not request.GET.from and not request.GET.to %}btn-primary{% else %}btn-outline-primary{% endif %}">Month</button>
+                        <button type="submit" name="period" value="all" onclick="clearDateFilters(this)" class="btn {% if request.GET.period == 'all' or not request.GET.period or request.GET.from or request.GET.to %}btn-primary{% else %}btn-outline-primary{% endif %}">All</button>
+                    </div>
+                    {% if request.GET.status %}<input type="hidden" name="status" value="{{ request.GET.status }}">{% endif %}
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">From</label>
+                    <input type="text" name="from" id="dateFrom" class="form-control form-control-sm date-picker" placeholder="dd/mm/yyyy" value="{% if from_date_display %}{{ from_date_display }}{% endif %}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">To</label>
+                    <input type="text" name="to" id="dateTo" class="form-control form-control-sm date-picker" placeholder="dd/mm/yyyy" value="{% if to_date_display %}{{ to_date_display }}{% endif %}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">Status</label>
+                    <select name="status" class="form-select form-select-sm">
+                        <option value="">All Statuses</option>
+                        <option value="Open" {% if request.GET.status == 'Open' %}selected{% endif %}>Open</option>
+                        <option value="Resolved" {% if request.GET.status == 'Resolved' %}selected{% endif %}>Self Fixed</option>
+                        <option value="Closed" {% if request.GET.status == 'Closed' %}selected{% endif %}>Closed</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary btn-sm" type="submit">Filter</button>
+                    <a href="{% url 'home' %}" class="btn btn-secondary btn-sm">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Incident History Section -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+            <h5 class="mb-0 fw-bold">
+                <i class="fas fa-history"></i> My Incident History
+            </h5>
+            <span class="badge bg-light text-dark border">
+                Total: {{ status_counts.total }} tickets
+            </span>
+        </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>ID</th>
-                            <th>Title</th>
-                            <th>Date Reported</th>
-                            <th>Status</th>
+                            <th class="fw-bold">ID</th>
+                            <th class="fw-bold">Issue Title</th>
+                            <th class="fw-bold">Date Reported</th>
+                            <th class="fw-bold">Date Solved</th>
+                            <th class="fw-bold">Status</th>
+                            <th class="fw-bold text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for ticket in tickets %}
+                        {% for item in processed_incidents %}
+                        {% with incident=item.incident %}
                         <tr>
-                            <td>#{{ ticket.id }}</td>
-                            <td>{{ ticket.title }}</td>
-                            <td>{{ ticket.created_at|date:"d/m/Y" }}</td>
+                            <td class="fw-bold">#{{ incident.id }}</td>
                             <td>
-                                {% if ticket.status == 'Open' %}
-                                    <span class="badge bg-danger">Open</span>
-                                {% elif ticket.status == 'Resolved' or ticket.status == 'Self Fixed' or ticket.status == 'Self-Fixed' %}
-                                    <span class="badge bg-primary">Self Fixed</span>
-                                {% elif ticket.status == 'Closed' %}
-                                    <span class="badge bg-success">Closed</span>
+                                <strong>{{ incident.title }}</strong>
+                            </td>
+                            <td>
+                                <small>{{ incident.created_at|date:"d/m/Y H:i" }}</small>
+                            </td>
+                            <td>
+                                {% if incident.resolved_at %}
+                                    <small>{{ incident.resolved_at|date:"d/m/Y H:i" }}</small>
+                                {% elif incident.status == 'Resolved' %}
+                                    <small class="text-muted">{{ incident.created_at|date:"d/m/Y H:i" }}</small>
                                 {% else %}
-                                    <span class="badge bg-secondary">{{ ticket.status }}</span>
+                                    <small class="text-muted">-</small>
                                 {% endif %}
                             </td>
+                            <td>
+                                {% if incident.status == 'Open' or incident.status == 'In Progress' %}
+                                    <span class="badge bg-danger rounded-pill px-3">Open</span>
+                                {% elif incident.status == 'Resolved' %}
+                                    <span class="badge bg-primary rounded-pill px-3">Self Fixed</span>
+                                {% elif incident.status == 'Closed' %}
+                                    <span class="badge bg-success rounded-pill px-3">Closed</span>
+                                {% else %}
+                                    <span class="badge bg-secondary rounded-pill px-3">{{ incident.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#ticketModal{{ incident.id }}">
+                                    <i class="fas fa-eye"></i> More Details
+                                </button>
+                            </td>
                         </tr>
+                        
+                        <!-- Ticket Detail Modal -->
+                        <div class="modal fade" id="ticketModal{{ incident.id }}" tabindex="-1" 
+                             aria-labelledby="ticketModalLabel{{ incident.id }}" aria-hidden="true">
+                            <div class="modal-dialog modal-lg">
+                                <div class="modal-content">
+                                    <div class="modal-header bg-primary text-white">
+                                        <h5 class="modal-title" id="ticketModalLabel{{ incident.id }}">
+                                            <i class="fas fa-ticket-alt"></i> Ticket #{{ incident.id }} Details
+                                        </h5>
+                                        <button type="button" class="btn-close btn-close-white" 
+                                                data-bs-dismiss="modal" aria-label="Close"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <strong>ID:</strong>
+                                                <p class="mb-0">#{{ incident.id }}</p>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <strong>Username:</strong>
+                                                <p class="mb-0">{{ incident.user.username }}</p>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>Issue Title:</strong>
+                                            <p class="mb-0">{{ incident.title }}</p>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>Issue Description:</strong>
+                                            <div class="p-3 bg-light border rounded" style="min-height: 100px;">
+                                                <p class="mb-0">{{ incident.description|default:"No description provided"|linebreaks }}</p>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <strong>Date Reported:</strong>
+                                                <p class="mb-0">{{ incident.created_at|date:"d/m/Y H:i" }}</p>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <strong>Date Solved:</strong>
+                                                <p class="mb-0">
+                                                    {% if incident.resolved_at %}
+                                                        {{ incident.resolved_at|date:"d/m/Y H:i" }}
+                                                    {% elif incident.status == 'Resolved' %}
+                                                        {{ incident.created_at|date:"d/m/Y H:i" }}
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <strong>Status:</strong>
+                                                <p class="mb-0">
+                                                    {% if incident.status == 'Open' or incident.status == 'In Progress' %}
+                                                        <span class="badge bg-danger">Open</span>
+                                                    {% elif incident.status == 'Resolved' %}
+                                                        <span class="badge bg-primary">Self Fixed</span>
+                                                    {% elif incident.status == 'Closed' %}
+                                                        <span class="badge bg-success">Closed</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary">{{ incident.status }}</span>
+                                                    {% endif %}
+                                                </p>
+                                            </div>
+                                            <div class="col-md-6">
+                                                {% if incident.status == 'Closed' and incident.resolved_by %}
+                                                <strong>Settled by IT Admin:</strong>
+                                                <p class="mb-0">{{ incident.resolved_by.username }}</p>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="row mb-3">
+                                            <div class="col-md-6">
+                                                <strong>Department:</strong>
+                                                <p class="mb-0">
+                                                    {% if incident.user.employeeprofile.department %}
+                                                        {{ incident.user.employeeprofile.department }}
+                                                    {% elif incident.user.userprofile.department %}
+                                                        {{ incident.user.userprofile.department }}
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </p>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <strong>Laptop Model:</strong>
+                                                <p class="mb-0">
+                                                    {% if incident.user.employeeprofile.laptop_model %}
+                                                        {{ incident.user.employeeprofile.laptop_model }}
+                                                    {% elif incident.user.userprofile.laptop_model %}
+                                                        {{ incident.user.userprofile.laptop_model }}
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>Resolution Details:</strong>
+                                            {% if incident.status == 'Resolved' %}
+                                                <div class="alert alert-success mb-2">
+                                                    <i class="fas fa-check-circle"></i> <strong>Self Fixed via Smart Scanner</strong>
+                                                </div>
+                                                {% if item.smart_suggestions %}
+                                                    <div class="card bg-light border-success mb-2">
+                                                        <div class="card-body">
+                                                            <strong class="text-success"><i class="fas fa-lightbulb"></i> Smart Scanner Solutions Used:</strong>
+                                                            <ul class="mb-0 mt-2">
+                                                                {% for suggestion in item.smart_suggestions %}
+                                                                    <li class="mb-1">{{ suggestion }}</li>
+                                                                {% endfor %}
+                                                            </ul>
+                                                        </div>
+                                                    </div>
+                                                {% else %}
+                                                    <p class="mb-0 text-muted">
+                                                        <i class="fas fa-info-circle"></i> Issue was resolved using Smart Scanner quick fixes.
+                                                        {% if incident.description and incident.description != "Reported via Smart Scanner" and incident.description != "Issue resolved via Smart Scanner quick fixes." %}
+                                                            <br><small>{{ incident.description }}</small>
+                                                        {% endif %}
+                                                    </p>
+                                                {% endif %}
+                                            {% elif incident.status == 'Open' and not incident.admin_response %}
+                                                <p class="mb-0 text-info">
+                                                    <i class="fas fa-clock"></i> In Progress Review
+                                                </p>
+                                            {% elif incident.status == 'Closed' and incident.admin_response %}
+                                                <div class="alert alert-success mb-2">
+                                                    <p class="mb-0">{{ incident.admin_response }}</p>
+                                                </div>
+                                                <p class="mb-0 mt-2">
+                                                    Resolved by 
+                                                    {% if incident.resolved_by %}
+                                                        {{ incident.resolved_by.username }}
+                                                    {% else %}
+                                                        IT Team
+                                                    {% endif %}
+                                                </p>
+                                            {% elif incident.status == 'Closed' %}
+                                                <p class="mb-0">{{ incident.description|default:"No description provided" }}</p>
+                                            {% else %}
+                                                <p class="mb-0">{{ incident.description|default:"No description provided" }}</p>
+                                            {% endif %}
+                                        </div>
+                                        {% if incident.admin_response and incident.status != 'Closed' %}
+                                        <div class="alert alert-info">
+                                            <strong><i class="fas fa-comment-dots"></i> Admin Response:</strong>
+                                            <p class="mb-0 mt-2">{{ incident.admin_response }}</p>
+                                        </div>
+                                        {% elif not incident.admin_response %}
+                                        <div class="alert alert-light">
+                                            <small class="text-muted">
+                                                <i class="fas fa-info-circle"></i> Admin Comment Not Required
+                                            </small>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="modal-footer">
+                                        {% if user.is_staff %}
+                                        <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary">
+                                            <i class="fas fa-cog"></i> Manage
+                                        </a>
+                                        {% endif %}
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endwith %}
                         {% empty %}
                         <tr>
-                            <td colspan="4" class="text-center py-4 text-muted">You haven't reported any incidents yet.</td>
+                            <td colspan="7" class="text-center py-5">
+                                <div class="text-muted">
+                                    <i class="fas fa-inbox fa-3x mb-3"></i>
+                                    <p class="mb-2">You haven't reported any incidents yet.</p>
+                                    <a href="{% url 'report_incident' %}" class="btn btn-primary">
+                                        <i class="fas fa-plus-circle"></i> Report Your First Incident
+                                    </a>
+                                </div>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -47,5 +361,107 @@
             </div>
         </div>
     </div>
+
+    <!-- Quick Actions -->
+    <div class="row mt-4">
+        <div class="col-md-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-3">
+                        <i class="fas fa-bolt"></i> Quick Actions
+                    </h5>
+                    <div class="d-flex gap-3 flex-wrap">
+                        <a href="{% url 'report_incident' %}" class="btn btn-primary">
+                            <i class="fas fa-plus-circle"></i> Report New Incident
+                        </a>
+                        <a href="{% url 'home' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize Flatpickr for date inputs with dd/mm/yyyy format
+    const dateOptions = {
+        dateFormat: "d/m/Y",
+        allowInput: true,
+        clickOpens: true,
+        locale: {
+            firstDayOfWeek: 1
+        },
+        onChange: function(selectedDates, dateStr, instance) {
+            const form = instance.input.closest('form');
+            if (form && dateStr) {
+                setTimeout(() => {
+                    form.submit();
+                }, 100);
+            }
+        },
+        onReady: function(selectedDates, dateStr, instance) {
+            const calendarContainer = instance.calendarContainer;
+            if (calendarContainer.querySelector('.flatpickr-today-button')) {
+                return;
+            }
+            const todayBtn = document.createElement('button');
+            todayBtn.className = 'flatpickr-today-button';
+            todayBtn.type = 'button';
+            todayBtn.textContent = 'Today';
+            todayBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const today = new Date();
+                instance.setDate(today, true);
+                var day = ("0" + today.getDate()).slice(-2);
+                var month = ("0" + (today.getMonth() + 1)).slice(-2);
+                var year = today.getFullYear();
+                instance.input.value = day + "/" + month + "/" + year;
+                instance.close();
+                const form = instance.input.closest('form');
+                if (form) {
+                    setTimeout(() => {
+                        form.submit();
+                    }, 100);
+                }
+            });
+            const calendarWrapper = calendarContainer.querySelector('.flatpickr-calendar');
+            if (calendarWrapper) {
+                const buttonWrapper = document.createElement('div');
+                buttonWrapper.style.cssText = 'padding: 5px; border-top: 1px solid #e6e6e6;';
+                buttonWrapper.appendChild(todayBtn);
+                calendarWrapper.appendChild(buttonWrapper);
+            } else {
+                calendarContainer.appendChild(todayBtn);
+            }
+        }
+    };
+    
+    flatpickr("#dateFrom", dateOptions);
+    flatpickr("#dateTo", dateOptions);
+});
+
+function clearDateFilters(button) {
+    const form = button.closest('form');
+    const fromInput = form.querySelector('input[name="from"]');
+    const toInput = form.querySelector('input[name="to"]');
+    
+    if (fromInput) {
+        fromInput.value = '';
+        if (fromInput._flatpickr) {
+            fromInput._flatpickr.clear();
+        }
+    }
+    if (toInput) {
+        toInput.value = '';
+        if (toInput._flatpickr) {
+            toInput._flatpickr.clear();
+        }
+    }
+}
+</script>
 {% endblock %}

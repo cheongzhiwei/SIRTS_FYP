@@ -16,10 +16,10 @@
                 </div>
                 <div class="card-body">
                     <div class="mb-4 p-3 bg-light border rounded">
-                        <p><strong>Reporter:</strong> {{ ticket.reporter.username }}</p>
+                        <p><strong>Reporter:</strong> {{ ticket.user.username }}</p>
                         <p><strong>Date:</strong> {{ ticket.created_at|date:"M d, Y H:i" }}</p>
-                        <h5>{{ ticket.title }}</h5>
-                        <p class="text-muted">{{ ticket.description }}</p>
+                        <p><strong>Issue Description:</strong> {{ ticket.title }}</p>
+                        <p><strong>Resolution Details:</strong> <span class="text-muted">{{ ticket.description }}</span></p>
                     </div>
 
                     <form method="post">
@@ -35,8 +35,9 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-bold">Admin Notes</label>
-                            <textarea name="admin_notes" class="form-control" rows="3" placeholder="What did you do to fix it?"></textarea>
+                            <label class="form-label fw-bold">Resolution Details / Admin Notes</label>
+                            <textarea name="admin_notes" class="form-control" rows="3" placeholder="Enter resolution details or admin notes...">{{ ticket.admin_response }}</textarea>
+                            <small class="form-text text-muted">This will be visible to the user in the Resolution Details section.</small>
                         </div>
 
                         <button type="submit" class="btn btn-success w-100">💾 Save Changes</button>

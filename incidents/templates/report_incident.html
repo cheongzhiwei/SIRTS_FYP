@@ -12,10 +12,18 @@
                     {% csrf_token %}
 
                     <div class="mb-4">
-                        <label class="form-label fw-bold fs-5">What is the issue? (e.g. Printer jam, Wifi slow)</label>
+                        <label class="form-label fw-bold fs-5">Issue Title (max 10 words, e.g. Printer jam, Wifi slow)</label>
                         <input type="text" id="issueTitle" name="title" class="form-control form-control-lg border-2" 
-                               placeholder="Type issue here..." required onkeyup="scanKeywords()">
-                        <div class="form-text mt-2">The system will scan for keywords to suggest a quick fix.</div>
+                               placeholder="Type issue title here..." required maxlength="250" onkeyup="scanKeywords(); checkWordCount()">
+                        <div class="form-text mt-2">
+                            <span id="wordCount">0</span>/10 words. The system will scan for keywords to suggest a quick fix.
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Issue Description (Optional)</label>
+                        <textarea name="description" class="form-control" rows="3" 
+                                  placeholder="Provide more details about the issue (optional)..."></textarea>
                     </div>
 
                     <div id="solutionHub" class="card bg-light border-warning mb-4 d-none">
@@ -45,8 +53,17 @@
                             </button>
                         </div>
                     </div>
+                    
+                    <div id="submitOnlyButton" class="border-top pt-4">
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg shadow-sm">
+                                📩 Submit Ticket
+                            </button>
+                        </div>
+                    </div>
 
                     <input type="hidden" name="status" id="statusInput" value="Open">
+                    <input type="hidden" name="smart_suggestions" id="smartSuggestionsInput" value="">
                 </form>
             </div>
         </div>
@@ -69,53 +86,151 @@
             suggestions: ['Close unused apps.', 'Restart the specific app.', 'Turn laptop OFF then ON.'] 
         },
         { 
-            keywords: ['screen', 'mouse', 'keyboard', 'hardware', 'monitor'], 
+            keywords: ['screen', 'monitor', 'display'], 
             suggestions: ['Unplug and plug it back in.', 'Restart your laptop.', 'Try a different USB port.'] 
         },
         { 
-            keywords: ['charger', 'battery', 'cable', 'power', 'plug'], 
+            keywords: ['mouse', 'mice', 'cursor', 'pointer', 'click'], 
+            suggestions: ['Unplug and plug it back in.', 'Restart your laptop.', 'Try a different USB port.', 'Change and charge the battery.'] 
+        },
+        { 
+            keywords: ['keyboard', 'keys', 'typing'], 
+            suggestions: ['Unplug and plug it back in.', 'Restart your laptop.', 'Try a different USB port.', 'Change and charge the battery.'] 
+        },
+        { 
+            keywords: ['hardware', 'device', 'peripheral'], 
+            suggestions: ['Unplug and plug it back in.', 'Restart your laptop.', 'Try a different USB port.'] 
+        },
+        { 
+            keywords: ['charger', 'battery', 'cable', 'power', 'plug', 'charging'], 
             suggestions: ['Check if the charging light is ON.', 'Push the cables in firmly.', 'Try a different wall socket.'] 
+        },
+        { 
+            keywords: ['speaker', 'sound', 'voice', 'microphone', 'mic'], 
+            suggestions: ['Check if the device is muted.', 'Ensure the correct Output/Input device is selected in Sound Settings.', 'Unplug and re-plug your headset or speakers.'] 
         }
     ];
+
+    let currentSuggestions = []; // Store current suggestions
+
+    function checkWordCount() {
+        const input = document.getElementById('issueTitle');
+        const text = input.value.trim();
+        const words = text.split(/\s+/).filter(word => word.length > 0);
+        const wordCount = words.length;
+        const wordCountSpan = document.getElementById('wordCount');
+        
+        if (wordCountSpan) {
+            wordCountSpan.textContent = wordCount;
+            if (wordCount > 10) {
+                wordCountSpan.style.color = 'red';
+                wordCountSpan.textContent = wordCount + ' (max 10 words)';
+            } else {
+                wordCountSpan.style.color = '';
+            }
+        }
+        
+        // Limit to 10 words
+        if (wordCount > 10) {
+            const limitedWords = words.slice(0, 10).join(' ');
+            input.value = limitedWords;
+            wordCountSpan.textContent = '10 (max reached)';
+            wordCountSpan.style.color = 'red';
+        }
+    }
 
     function scanKeywords() {
         const title = document.getElementById('issueTitle').value.toLowerCase();
         const hub = document.getElementById('solutionHub');
         const list = document.getElementById('suggestionList');
         const actions = document.getElementById('actionButtons');
+        const suggestionsInput = document.getElementById('smartSuggestionsInput');
         
         let found = false;
         list.innerHTML = '';
+        currentSuggestions = []; // Reset suggestions
 
         // Only scan if title has at least 3 characters
         if (title.length > 2) {
+            // Split title into words for better matching
+            const titleWords = title.split(/\s+/);
+            
             rules.forEach(rule => {
-                if (rule.keywords.some(k => title.includes(k))) {
+                // Check if any keyword matches as a whole word in the title
+                const matched = rule.keywords.some(k => {
+                    // Check if keyword appears as a whole word
+                    const wordBoundaryRegex = new RegExp('\\b' + k + '\\b', 'i');
+                    return wordBoundaryRegex.test(title);
+                });
+                
+                if (matched) {
                     rule.suggestions.forEach(s => {
                         list.innerHTML += `<li class="mb-2">${s}</li>`;
+                        currentSuggestions.push(s); // Store suggestion
                     });
                     found = true;
                 }
             });
         }
 
+        // Save suggestions to hidden input
+        suggestionsInput.value = currentSuggestions.join('\n');
+
         if (found) {
             hub.classList.remove('d-none');
-            actions.classList.add('d-none'); // Hide buttons until they acknowledge
+            // Hide both button sections when suggestions are found
+            actions.classList.add('d-none');
+            document.getElementById('submitOnlyButton').classList.add('d-none');
         } else {
             hub.classList.add('d-none');
-            // If no keywords found, show submission buttons immediately
-            actions.classList.remove('d-none');
+            // If no keywords found, show only submit button
+            actions.classList.add('d-none');
+            document.getElementById('submitOnlyButton').classList.remove('d-none');
+            suggestionsInput.value = ''; // Clear suggestions if no match
         }
     }
 
     function enableSubmission() {
         document.getElementById('ackBtn').classList.add('d-none');
         document.getElementById('actionButtons').classList.remove('d-none');
+        document.getElementById('submitOnlyButton').classList.add('d-none');
     }
 
     function submitAsSelfFixed() {
         document.getElementById('statusInput').value = 'Resolved';
+        // Ensure suggestions are saved before submitting
+        const suggestionsInput = document.getElementById('smartSuggestionsInput');
+        const list = document.getElementById('suggestionList');
+        
+        // Priority 1: Get from currentSuggestions array (most reliable)
+        if (currentSuggestions.length > 0) {
+            suggestionsInput.value = currentSuggestions.join('\n');
+        }
+        // Priority 2: Extract from displayed list if array is empty
+        else if (list && list.children.length > 0) {
+            const suggestions = [];
+            for (let i = 0; i < list.children.length; i++) {
+                const text = list.children[i].textContent.trim();
+                if (text) {
+                    suggestions.push(text);
+                }
+            }
+            if (suggestions.length > 0) {
+                suggestionsInput.value = suggestions.join('\n');
+            }
+        }
+        // Priority 3: Use existing value if already set
+        // (suggestionsInput.value already has a value from scanKeywords)
+        
+        // Debug: Log what we're sending
+        console.log('Submitting as Self Fixed with suggestions:', suggestionsInput.value);
+        console.log('Current suggestions array:', currentSuggestions);
+        
+        // Ensure we have a description even if no suggestions
+        if (!suggestionsInput.value) {
+            suggestionsInput.value = 'Issue resolved via Smart Scanner quick fixes.';
+        }
+        
         document.getElementById('incidentForm').submit();
     }
 </script>

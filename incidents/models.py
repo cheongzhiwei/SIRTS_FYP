@@ -57,9 +57,11 @@ class Incident(models.Model):
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
     
     # ✅ ADMIN RESPONSE FIELD (This fixes your error!)
     admin_response = models.TextField(blank=True, null=True)
+    resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='resolved_incidents')
 
     def __str__(self):
         return f"{self.title} - {self.status}"

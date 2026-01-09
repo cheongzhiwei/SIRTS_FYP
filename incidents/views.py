@@ -9,24 +9,172 @@ from django.utils import timezone
 
 @login_required
 def home(request):
-    # Shows the user's own incident history
+    # Shows the user's own incident history with status overview
     incidents = Incident.objects.filter(user=request.user).order_by('-created_at')
-    return render(request, 'home.html', {'incidents': incidents})
+    
+    # Get filter parameters
+    status_filter = request.GET.get('status')
+    period_filter = request.GET.get('period', 'week')  # Default to week
+    from_date = request.GET.get('from')
+    to_date = request.GET.get('to')
+    
+    # Period filtering (today, week, month, all)
+    today = timezone.now().date()
+    
+    # Helper function to get period filter queryset
+    def get_period_queryset(base_queryset):
+        # If date range is specified, use it instead of period
+        if from_date or to_date:
+            queryset = base_queryset
+            if from_date:
+                try:
+                    from_date_obj = datetime.strptime(from_date, '%d/%m/%Y').date()
+                except ValueError:
+                    try:
+                        from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                    except ValueError:
+                        from_date_obj = None
+                if from_date_obj:
+                    queryset = queryset.filter(created_at__date__gte=from_date_obj)
+            if to_date:
+                try:
+                    to_date_obj = datetime.strptime(to_date, '%d/%m/%Y').date()
+                except ValueError:
+                    try:
+                        to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                    except ValueError:
+                        to_date_obj = None
+                if to_date_obj:
+                    queryset = queryset.filter(created_at__date__lte=to_date_obj)
+            return queryset
+        
+        # Otherwise use period filter
+        if period_filter == 'today':
+            return base_queryset.filter(created_at__date=today)
+        elif period_filter == 'week':
+            week_start = today - timedelta(days=today.weekday())
+            return base_queryset.filter(created_at__date__gte=week_start)
+        elif period_filter == 'month':
+            return base_queryset.filter(created_at__year=today.year, created_at__month=today.month)
+        else:  # 'all'
+            return base_queryset
+    
+    # Apply period/date range filtering
+    incidents = get_period_queryset(incidents)
+    
+    # Status filtering
+    if status_filter:
+        incidents = incidents.filter(status=status_filter)
+    
+    # Process incidents to extract smart scanner suggestions
+    processed_incidents = []
+    for incident in incidents:
+        incident_dict = {
+            'incident': incident,
+            'smart_suggestions': []
+        }
+        
+        # Extract smart scanner suggestions if status is Resolved
+        if incident.status == 'Resolved' and incident.description:
+            # New format: description IS the suggestions (no prefix)
+            if 'Smart Scanner Suggestions:' in incident.description:
+                # Old format: Extract suggestions after "Smart Scanner Suggestions:"
+                suggestions_text = incident.description.split('Smart Scanner Suggestions:')[1].strip()
+                incident_dict['smart_suggestions'] = [s.strip() for s in suggestions_text.split('\n') if s.strip()]
+            elif 'Reported via Smart Scanner' not in incident.description and 'Issue resolved via Smart Scanner quick fixes.' not in incident.description:
+                # New format: Description is directly the suggestions, split by newline
+                incident_dict['smart_suggestions'] = [s.strip() for s in incident.description.split('\n') if s.strip()]
+        
+        processed_incidents.append(incident_dict)
+    
+    # Calculate status counts based on filtered data (for status bar)
+    status_bar_base = Incident.objects.filter(user=request.user)
+    status_bar_base = get_period_queryset(status_bar_base)
+    
+    status_counts = {
+        'open': status_bar_base.filter(status='Open').count(),
+        'resolved': status_bar_base.filter(status='Resolved').count(),
+        'closed': status_bar_base.filter(status='Closed').count(),
+        'total': status_bar_base.count()
+    }
+    
+    # Format dates for display in template (dd/mm/yyyy)
+    from_date_display = None
+    to_date_display = None
+    if from_date:
+        try:
+            from_date_obj = datetime.strptime(from_date, '%d/%m/%Y').date()
+            from_date_display = from_date_obj.strftime('%d/%m/%Y')
+        except ValueError:
+            try:
+                from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                from_date_display = from_date_obj.strftime('%d/%m/%Y')
+            except ValueError:
+                from_date_display = from_date
+    
+    if to_date:
+        try:
+            to_date_obj = datetime.strptime(to_date, '%d/%m/%Y').date()
+            to_date_display = to_date_obj.strftime('%d/%m/%Y')
+        except ValueError:
+            try:
+                to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                to_date_display = to_date_obj.strftime('%d/%m/%Y')
+            except ValueError:
+                to_date_display = to_date
+    
+    context = {
+        'incidents': incidents,
+        'processed_incidents': processed_incidents,
+        'tickets': incidents,
+        'status_counts': status_counts,
+        'period_filter': period_filter,
+        'from_date_display': from_date_display,
+        'to_date_display': to_date_display,
+    }
+    return render(request, 'home.html', context)
 
 @login_required
 def report_incident(request):
     if request.method == 'POST':
         title = request.POST.get('title')
-        # Providing a default value prevents the IntegrityError you saw earlier
-        description = request.POST.get('description', 'Reported via Smart Scanner')
         status_value = request.POST.get('status', 'Open')
+        smart_suggestions = request.POST.get('smart_suggestions', '')
+        
+        # Validate title word count (max 10 words)
+        if title:
+            title_words = title.strip().split()
+            if len(title_words) > 10:
+                messages.error(request, "Issue title cannot exceed 10 words. Please shorten your title.")
+                return render(request, 'report_incident.html')
+        
+        # Get description from form
+        description = request.POST.get('description', '').strip()
+        
+        # If status is Resolved and we have smart suggestions, save them as description
+        if status_value == 'Resolved' and smart_suggestions:
+            # Save the actual suggestions as the description (e.g., "Unplug and plug it back in.\nRestart your laptop.")
+            if description:
+                description = description + "\n\nSmart Scanner Solutions:\n" + smart_suggestions.strip()
+            else:
+                description = smart_suggestions.strip()
+        elif status_value == 'Resolved' and not description:
+            description = "Issue resolved via Smart Scanner quick fixes."
+        elif not description:
+            description = "Reported via Smart Scanner"
 
-        Incident.objects.create(
+        # Create incident
+        incident = Incident.objects.create(
             user=request.user,
             title=title,
             description=description,
             status=status_value
         )
+        
+        # If self-fixed, set resolved_at to created_at (same date)
+        if status_value == 'Resolved':
+            incident.resolved_at = incident.created_at
+            incident.save()
         
         if status_value == 'Resolved':
             messages.success(request, "🎉 Great! Your issue is recorded as Self-Fixed.")
@@ -64,17 +212,33 @@ def admin_dashboard(request):
             if from_date:
                 # Convert string to date object if needed
                 if isinstance(from_date, str):
-                    from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                    # Try dd/mm/yyyy format first, then yyyy-mm-dd
+                    try:
+                        from_date_obj = datetime.strptime(from_date, '%d/%m/%Y').date()
+                    except ValueError:
+                        try:
+                            from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                        except ValueError:
+                            from_date_obj = None
                 else:
                     from_date_obj = from_date
-                queryset = queryset.filter(created_at__date__gte=from_date_obj)
+                if from_date_obj:
+                    queryset = queryset.filter(created_at__date__gte=from_date_obj)
             if to_date:
                 # Convert string to date object if needed
                 if isinstance(to_date, str):
-                    to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                    # Try dd/mm/yyyy format first, then yyyy-mm-dd
+                    try:
+                        to_date_obj = datetime.strptime(to_date, '%d/%m/%Y').date()
+                    except ValueError:
+                        try:
+                            to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                        except ValueError:
+                            to_date_obj = None
                 else:
                     to_date_obj = to_date
-                queryset = queryset.filter(created_at__date__lte=to_date_obj)
+                if to_date_obj:
+                    queryset = queryset.filter(created_at__date__lte=to_date_obj)
             return queryset
         
         # Otherwise use period filter
@@ -129,6 +293,35 @@ def admin_dashboard(request):
     # Note: We don't apply status filter to status_bar_base because we want to count all statuses
     # The status filter only affects the ticket list, not the status bar counts
     
+    # Format dates for display in template (dd/mm/yyyy)
+    from_date_display = None
+    to_date_display = None
+    if from_date:
+        try:
+            # Try parsing dd/mm/yyyy first
+            from_date_obj = datetime.strptime(from_date, '%d/%m/%Y').date()
+            from_date_display = from_date_obj.strftime('%d/%m/%Y')
+        except ValueError:
+            try:
+                # Try parsing yyyy-mm-dd
+                from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                from_date_display = from_date_obj.strftime('%d/%m/%Y')
+            except ValueError:
+                from_date_display = from_date
+    
+    if to_date:
+        try:
+            # Try parsing dd/mm/yyyy first
+            to_date_obj = datetime.strptime(to_date, '%d/%m/%Y').date()
+            to_date_display = to_date_obj.strftime('%d/%m/%Y')
+        except ValueError:
+            try:
+                # Try parsing yyyy-mm-dd
+                to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                to_date_display = to_date_obj.strftime('%d/%m/%Y')
+            except ValueError:
+                to_date_display = to_date
+    
     context = {
         'incidents': incidents,
         'open_count': status_bar_base.filter(status='Open').count(),
@@ -137,6 +330,8 @@ def admin_dashboard(request):
         'open_year_count': Incident.objects.filter(status='Open', created_at__year=datetime.now().year).count(),
         'all_count': status_bar_base.count(),
         'period_filter': period_filter,  # Pass period to template
+        'from_date_display': from_date_display,  # Formatted date for display
+        'to_date_display': to_date_display,  # Formatted date for display
     }
     return render(request, 'admin_dashboard.html', context)
 @login_required
@@ -148,7 +343,17 @@ def manage_ticket(request, ticket_id):
     
     if request.method == 'POST':
         new_status = request.POST.get('status')
+        admin_response = request.POST.get('admin_notes', '').strip()
+        
         ticket.status = new_status
+        if admin_response:
+            ticket.admin_response = admin_response
+        # Track which admin resolved the ticket and when
+        if new_status == 'Closed':
+            if admin_response:
+                ticket.resolved_by = request.user
+            if not ticket.resolved_at:
+                ticket.resolved_at = timezone.now()
         ticket.save()
         messages.success(request, f"Ticket #{ticket.id} updated successfully.")
         return redirect('admin_dashboard')
