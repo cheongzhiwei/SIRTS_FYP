@@ -1,7 +1,40 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
+from django.contrib.admin import DateFieldListFilter
+from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
+from django.db.models import Q
+from datetime import datetime, timedelta
 from .models import Incident, EmployeeProfile, UserProfile
+
+# Custom Date Range Filter
+class DateRangeFilter(admin.SimpleListFilter):
+    title = _('Date Created')
+    parameter_name = 'created_at'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('today', _('Today')),
+            ('week', _('Past 7 days')),
+            ('month', _('This month')),
+            ('year', _('This year')),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'today':
+            today = timezone.now().date()
+            return queryset.filter(created_at__date=today)
+        elif self.value() == 'week':
+            week_ago = timezone.now() - timedelta(days=7)
+            return queryset.filter(created_at__gte=week_ago)
+        elif self.value() == 'month':
+            month_start = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            return queryset.filter(created_at__gte=month_start)
+        elif self.value() == 'year':
+            year_start = timezone.now().replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            return queryset.filter(created_at__gte=year_start)
+        return queryset
 
 # 1. Define the "Inline" for EmployeeProfile (The Profile Box)
 # This says: "Put the EmployeeProfile form INSIDE the User form"
@@ -119,9 +152,31 @@ class UserAdmin(BaseUserAdmin):
 # 5. Define custom Incident Admin
 class IncidentAdmin(admin.ModelAdmin):
     list_display = ('id', 'get_reporter_user', 'title', 'get_date_created', 'get_date_close', 'get_status_display')
-    list_filter = ('status', 'created_at')  # Filters above the table
+    list_filter = ()  # No sidebar filters - using custom template filter below search
     search_fields = ('title', 'user__username', 'reporter_name', 'description')  # Search box above the table
     readonly_fields = ('created_at', 'resolved_at', 'resolved_by')
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        
+        # Filter by reporter user (exact match for dropdown, or icontains for text input)
+        user_filter = request.GET.get('user')
+        if user_filter:
+            # Try exact match first (for dropdown), then fall back to icontains (for text input)
+            try:
+                qs = qs.filter(user__id=user_filter)
+            except (ValueError, TypeError):
+                # If not a valid ID, treat as username search
+                qs = qs.filter(user__username__icontains=user_filter)
+        
+        return qs
+    
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        # Get all users who have reported incidents (for dropdown)
+        users_with_incidents = User.objects.filter(incident__isnull=False).distinct().order_by('username')
+        extra_context['users'] = users_with_incidents
+        return super().changelist_view(request, extra_context)
     
     # Remove actions dropdown
     def get_actions(self, request):

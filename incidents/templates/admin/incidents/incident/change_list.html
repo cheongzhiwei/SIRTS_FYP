@@ -4,72 +4,164 @@
 {% block extrastyle %}
 {{ block.super }}
 <style>
-    /* Hide the default sidebar filters */
-    #changelist-filter {
-        display: none;
-    }
-    
-    /* Style for filters below search */
-    .custom-filters-container {
-        margin: 15px 0;
-        padding: 15px;
+    /* Match dashboard filter styling */
+    .custom-user-filter {
         background: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 4px;
+        padding: 15px;
+        margin: 15px 0;
     }
     
-    .custom-filters-container h3 {
-        margin-top: 0;
-        margin-bottom: 10px;
-        font-size: 13px;
+    .filter-row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+    }
+    
+    .filter-group {
+        flex: 1;
+        min-width: 200px;
+    }
+    
+    .filter-group label {
+        display: block;
+        font-size: 11px;
         font-weight: 600;
-        text-transform: uppercase;
+        margin-bottom: 5px;
         color: #666;
     }
     
-    .custom-filters-container ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-    
-    .custom-filters-container li {
-        margin-bottom: 8px;
-    }
-    
-    .custom-filters-container a {
-        display: block;
-        padding: 5px 10px;
-        color: #417690;
-        text-decoration: none;
+    .filter-group input,
+    .filter-group select {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid #ddd;
         border-radius: 3px;
+        font-size: 13px;
     }
     
-    .custom-filters-container a:hover {
-        background: #e0e0e0;
-    }
-    
-    .custom-filters-container .selected {
+    .btn-filter {
         background: #417690;
         color: white;
+        padding: 6px 15px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 13px;
     }
     
-    .custom-filters-container .selected a {
+    .btn-filter:hover {
+        background: #205067;
+    }
+    
+    .btn-reset {
+        background: #6c757d;
+        color: white;
+        padding: 6px 15px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 13px;
+        text-decoration: none;
+        display: inline-block;
+    }
+    
+    .btn-reset:hover {
+        background: #5a6268;
         color: white;
     }
 </style>
 {% endblock %}
 
 {% block search %}
-    {{ block.super }}
-    
-    {# Display filters below the search box #}
-    {% if cl.has_filters %}
-    <div class="custom-filters-container">
-        <h3>{% trans 'Filter' %}</h3>
-        {% for spec in cl.filter_specs %}
-            {% admin_list_filter cl spec %}
+{{ block.super }}
+
+<!-- Custom User Filter - Matching Dashboard Format -->
+<div class="custom-user-filter">
+    <form method="GET" class="filter-form">
+        <div class="filter-row">
+            <div class="filter-group" style="flex: 2;">
+                <label>{% trans 'Reporter User' %}</label>
+                <div style="display: flex; gap: 5px;">
+                    <select name="user" style="flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 3px; font-size: 13px;">
+                        <option value="">All Users</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}" {% if request.GET.user == u.id|stringformat:"s" or request.GET.user == u.username %}selected{% endif %}>
+                                {{ u.username }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <button class="btn-filter" type="submit">Filter</button>
+                    <a href="?" class="btn-reset">Reset</a>
+                </div>
+            </div>
+        </div>
+        <!-- Preserve other GET parameters (like search, pagination, etc.) -->
+        {% for key, value in request.GET.items %}
+            {% if key != 'user' %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+            {% endif %}
         {% endfor %}
-    </div>
-    {% endif %}
+    </form>
+</div>
+
+<script>
+(function() {
+    // Function to get URL parameter value
+    function getUrlParam(name) {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get(name) || '';
+    }
+    
+    // Function to preserve parameters between forms
+    function preserveParams(form, paramName, paramValue) {
+        if (paramValue && !form.querySelector(`input[name="${paramName}"]`)) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = paramName;
+            input.value = paramValue;
+            form.appendChild(input);
+        }
+    }
+    
+    // Get current filter values from URL
+    const userFilterValue = getUrlParam('user');
+    const searchQuery = getUrlParam('q');
+    
+    // Handle Django admin search form
+    const searchForm = document.getElementById('changelist-search');
+    if (searchForm) {
+        // Preserve user filter in search form
+        if (userFilterValue) {
+            preserveParams(searchForm, 'user', userFilterValue);
+        }
+        
+        // When search form is submitted, ensure user filter is included
+        searchForm.addEventListener('submit', function(e) {
+            const currentUserValue = document.querySelector('.filter-form input[name="user"]')?.value || userFilterValue;
+            if (currentUserValue) {
+                preserveParams(searchForm, 'user', currentUserValue);
+            }
+        });
+    }
+    
+    // Handle custom filter form
+    const customFilterForm = document.querySelector('.filter-form');
+    if (customFilterForm) {
+        // Preserve search query in custom filter form
+        if (searchQuery) {
+            preserveParams(customFilterForm, 'q', searchQuery);
+        }
+        
+        // When custom filter form is submitted, ensure search query is included
+        customFilterForm.addEventListener('submit', function(e) {
+            const currentSearchValue = document.querySelector('#changelist-search input[name="q"]')?.value || searchQuery;
+            if (currentSearchValue) {
+                preserveParams(customFilterForm, 'q', currentSearchValue);
+            }
+        });
+    }
+})();
+</script>
 {% endblock %}
