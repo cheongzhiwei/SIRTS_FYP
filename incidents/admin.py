@@ -26,11 +26,47 @@ class UserProfileInline(admin.StackedInline):
     min_num = 0
     max_num = 1
 
-# 3. Define the new User Admin with inlines
+# 3. Define the "Inline" for Incident (Case Table)
+class IncidentInline(admin.TabularInline):
+    model = Incident
+    fk_name = 'user'  # Specify which ForeignKey to use (the reporter, not resolved_by)
+    verbose_name_plural = 'Cases / Incidents'
+    fields = ('id', 'get_reporter_name', 'get_date_created', 'get_date_close', 'status')
+    readonly_fields = ('id', 'get_reporter_name', 'get_date_created', 'get_date_close')
+    can_delete = False
+    extra = 0
+    show_change_link = True
+    
+    def get_reporter_name(self, obj):
+        """Get reporter name from user or reporter_name field"""
+        if obj.reporter_name:
+            return obj.reporter_name
+        return obj.user.username
+    get_reporter_name.short_description = 'Reporter Name'
+    
+    def get_date_created(self, obj):
+        """Get date created formatted"""
+        if obj.created_at:
+            return obj.created_at.strftime('%d/%m/%Y %H:%M')
+        return '-'
+    get_date_created.short_description = 'Date Created'
+    
+    def get_date_close(self, obj):
+        """Get date closed (resolved_at)"""
+        if obj.resolved_at:
+            return obj.resolved_at.strftime('%d/%m/%Y %H:%M')
+        return '-'
+    get_date_close.short_description = 'Date Close'
+    
+    def has_add_permission(self, request, obj=None):
+        """Disable adding incidents from user admin page"""
+        return False
+
+# 4. Define the new User Admin with inlines
 class UserAdmin(BaseUserAdmin):
     # Add inlines - they will appear as separate sections below the user info
-    # Using only EmployeeProfileInline as primary, add UserProfileInline if needed
-    inlines = [EmployeeProfileInline]
+    # IncidentInline shows all cases/incidents for this user
+    inlines = [EmployeeProfileInline, IncidentInline]
     
     # 1. Define exactly which columns to show in the list view
     list_display = ('username', 'get_department', 'get_laptop_model', 'email', 'is_staff')
@@ -80,6 +116,72 @@ class UserAdmin(BaseUserAdmin):
     # Label the column header nicely
     get_laptop_model.short_description = 'Laptop Model'
 
+# 5. Define custom Incident Admin
+class IncidentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'get_reporter_user', 'title', 'get_date_created', 'get_date_close', 'get_status_display')
+    list_filter = ('status', 'created_at')  # Filters above the table
+    search_fields = ('title', 'user__username', 'reporter_name', 'description')  # Search box above the table
+    readonly_fields = ('created_at', 'resolved_at', 'resolved_by')
+    
+    # Remove actions dropdown
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if 'delete_selected' in actions:
+            del actions['delete_selected']
+        return actions
+    
+    actions = None  # Disable actions
+    
+    fieldsets = (
+        ('Case Information', {
+            'fields': ('user', 'reporter_name', 'title', 'description', 'status')
+        }),
+        ('Resolution Details', {
+            'fields': ('admin_response', 'resolved_by', 'resolved_at'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at',),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_reporter_user(self, obj):
+        """Get reporter user name"""
+        if obj.reporter_name:
+            return f"{obj.user.username} ({obj.reporter_name})"
+        return obj.user.username
+    get_reporter_user.short_description = 'Reporter User'
+    get_reporter_user.admin_order_field = 'user__username'
+    
+    def get_date_created(self, obj):
+        """Format date created"""
+        if obj.created_at:
+            return obj.created_at.strftime('%d/%m/%Y %H:%M')
+        return '-'
+    get_date_created.short_description = 'Date Created'
+    get_date_created.admin_order_field = 'created_at'
+    
+    def get_date_close(self, obj):
+        """Format date closed"""
+        if obj.resolved_at:
+            return obj.resolved_at.strftime('%d/%m/%Y %H:%M')
+        return '-'
+    get_date_close.short_description = 'Date Close'
+    get_date_close.admin_order_field = 'resolved_at'
+    
+    def get_status_display(self, obj):
+        """Custom status display: Open -> open, Resolved -> self-fixed, Closed -> close"""
+        status_map = {
+            'Open': 'open',
+            'In Progress': 'open',
+            'Resolved': 'self-fixed',
+            'Closed': 'close'
+        }
+        return status_map.get(obj.status, obj.status.lower())
+    get_status_display.short_description = 'Status'
+    get_status_display.admin_order_field = 'status'
+
 admin.site.unregister(User)
 admin.site.register(User, UserAdmin)
-admin.site.register(Incident)
+admin.site.register(Incident, IncidentAdmin)

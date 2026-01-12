@@ -3,6 +3,7 @@
 <head>
     <title>Manage Ticket #{{ ticket.id }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body class="bg-light">
 
@@ -18,18 +19,42 @@
                     <div class="mb-4 p-3 bg-light border rounded">
                         <p><strong>Reporter:</strong> {{ ticket.user.username }}</p>
                         <p><strong>Date:</strong> {{ ticket.created_at|date:"M d, Y H:i" }}</p>
-                        <p><strong>Issue Description:</strong> {{ ticket.title }}</p>
-                        <p><strong>Resolution Details:</strong> <span class="text-muted">{{ ticket.description }}</span></p>
+                        <p><strong>Issue Title:</strong> {{ ticket.title }}</p>
+                        <p><strong>Issue Description:</strong> <span class="text-muted">{{ ticket.description }}</span></p>
+                        {% if ticket.resolved_by %}
+                        <p><strong>Resolved by:</strong> {{ ticket.resolved_by.username }}</p>
+                        {% endif %}
+                        {% if ticket.resolved_at %}
+                        <p><strong>Resolved at:</strong> {{ ticket.resolved_at|date:"M d, Y H:i" }}</p>
+                        {% endif %}
                     </div>
 
                     <form method="post">
                         {% csrf_token %}
                         
+                        {% if user.is_superuser %}
+                        <div class="alert alert-info mb-3">
+                            <i class="fas fa-shield-alt"></i> <strong>Superadmin Mode:</strong> You can edit ticket content and delete tickets.
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Issue Title</label>
+                            <input type="text" name="title" class="form-control" value="{{ ticket.title }}" maxlength="200">
+                            <small class="form-text text-muted">Edit the issue title (max 10 words recommended).</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Issue Description</label>
+                            <textarea name="description" class="form-control" rows="5" placeholder="Enter issue description...">{{ ticket.description }}</textarea>
+                            <small class="form-text text-muted">Edit the full issue description.</small>
+                        </div>
+                        {% endif %}
+                        
                         <div class="mb-3">
                             <label class="form-label fw-bold">Update Status</label>
                             <select name="status" class="form-select">
                                 <option value="Open" {% if ticket.status == 'Open' %}selected{% endif %}>Open</option>
-                                <option value="Self-Fixed" {% if ticket.status == 'Self-Fixed' %}selected{% endif %}>Self Fixed</option>
+                                <option value="Resolved" {% if ticket.status == 'Resolved' %}selected{% endif %}>Resolved</option>
                                 <option value="Closed" {% if ticket.status == 'Closed' %}selected{% endif %}>Closed</option>
                             </select>
                         </div>
@@ -40,7 +65,14 @@
                             <small class="form-text text-muted">This will be visible to the user in the Resolution Details section.</small>
                         </div>
 
-                        <button type="submit" class="btn btn-success w-100">💾 Save Changes</button>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success flex-fill">💾 Save Changes</button>
+                            {% if user.is_superuser %}
+                            <button type="submit" name="delete_ticket" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete ticket #{{ ticket.id }}? This action cannot be undone.');">
+                                🗑️ Delete Ticket
+                            </button>
+                            {% endif %}
+                        </div>
                     </form>
                 </div>
             </div>

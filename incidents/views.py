@@ -342,8 +342,25 @@ def manage_ticket(request, ticket_id):
     ticket = Incident.objects.get(id=ticket_id)
     
     if request.method == 'POST':
+        # Check if this is a delete request
+        if 'delete_ticket' in request.POST and request.user.is_superuser:
+            ticket_id_for_message = ticket.id
+            ticket.delete()
+            messages.success(request, f"Ticket #{ticket_id_for_message} deleted successfully.")
+            return redirect('admin_dashboard')
+        
+        # Update ticket fields
         new_status = request.POST.get('status')
         admin_response = request.POST.get('admin_notes', '').strip()
+        
+        # Allow superuser to edit ticket content
+        if request.user.is_superuser:
+            title = request.POST.get('title', '').strip()
+            description = request.POST.get('description', '').strip()
+            if title:
+                ticket.title = title
+            if description:
+                ticket.description = description
         
         ticket.status = new_status
         if admin_response:
