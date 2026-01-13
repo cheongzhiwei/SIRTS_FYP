@@ -2,11 +2,13 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
 from django.contrib import messages
 from .models import Incident
 from datetime import datetime, timedelta, date
 from django.utils import timezone
 from django.http import JsonResponse
+from django.urls import reverse
 
 @login_required
 def home(request):
@@ -337,31 +339,21 @@ def admin_dashboard(request):
     return render(request, 'admin_dashboard.html', context)
 @login_required
 def manage_ticket(request, ticket_id):
+    """
+    Dashboard view for managing tickets.
+    Only allows updating status and admin notes.
+    Edit and delete must be done in Django admin.
+    """
     if not request.user.is_staff:
         return redirect('home')
         
     ticket = Incident.objects.get(id=ticket_id)
     
     if request.method == 'POST':
-        # Check if this is a delete request
-        if 'delete_ticket' in request.POST and request.user.is_superuser:
-            ticket_id_for_message = ticket.id
-            ticket.delete()
-            messages.success(request, f"Ticket #{ticket_id_for_message} deleted successfully.")
-            return redirect('admin_dashboard')
-        
-        # Update ticket fields
+        # Only allow updating status and admin notes
+        # Edit and delete are only allowed in Django admin
         new_status = request.POST.get('status')
         admin_response = request.POST.get('admin_notes', '').strip()
-        
-        # Allow superuser to edit ticket content
-        if request.user.is_superuser:
-            title = request.POST.get('title', '').strip()
-            description = request.POST.get('description', '').strip()
-            if title:
-                ticket.title = title
-            if description:
-                ticket.description = description
         
         ticket.status = new_status
         if admin_response:
@@ -410,62 +402,62 @@ from django.http import JsonResponse
 
 @login_required
 def incident_calendar_data(request):
+    incidents = Incident.objects.all()
+     
     """
     Returns JSON data for calendar events.
     Shows incidents with created date and resolved date (if available).
     Like Google Calendar, shows when incidents were created and when they were resolved.
+    Supports filtering by status and resolved_by admin.
     """
     if not request.user.is_staff:
         return JsonResponse([], safe=False)
     
+    # Get filter parameters
+    status_filter = request.GET.get('status', '')
+    admin_filter = request.GET.get('admin', '')
+    
     # Fetch all incidents for the calendar
     incidents = Incident.objects.all()
+    
+    # Apply status filter
+    if status_filter:
+        incidents = incidents.filter(status=status_filter)
+    
+    # Apply admin filter (resolved_by)
+    if admin_filter:
+        incidents = incidents.filter(resolved_by_id=admin_filter)
+    
     events = []
     
     for incident in incidents:
-        # Determine color based on status
-        color = '#dc3545'  # Red for Open
-        if incident.status == 'Resolved':
-            color = '#007bff'  # Blue for Self-Fixed
-        elif incident.status == 'Closed':
-            color = '#28a745'  # Green for Closed
-        
-        # Create event for incident creation
-        created_event = {
-            'id': f"{incident.id}_created",
-            'title': f"#{incident.id}: {incident.title}",
-            'start': incident.created_at.isoformat(),
+        # Determine the primary date and label based on status
+        if incident.status == 'Closed' and incident.resolved_at:
+            # Show on the date IT fixed it
+            event_date = incident.resolved_at
+            title = f"CLOSED #{incident.id}"
+            color = '#28a745' # Green
+        elif incident.status == 'Resolved':
+            # Show on the date user fixed it (usually created_at)
+            event_date = incident.created_at
+            title = f"SELF-FIXED #{incident.id}"
+            color = '#007bff' # Blue
+        else:
+            # Show on the date reported
+            event_date = incident.created_at
+            title = f"OPEN #{incident.id}"
+            color = '#dc3545' # Red
+
+        # Create single-day event (no end date, only start date)
+        events.append({
+            'title': f"{title}: {incident.title}",
+            'start': event_date.date().isoformat(), # Only use the date part (YYYY-MM-DD format)
+            'allDay': True, # Single-day event without time
             'backgroundColor': color,
             'borderColor': color,
-            'url': f"/manage/{incident.id}/",
-            'extendedProps': {
-                'status': incident.status,
-                'reporter': incident.user.username,
-                'event_type': 'created'
-            }
-        }
+            'url': reverse('manage_ticket', args=[incident.id]),
+        })
         
-        # If resolved, show as a date range from created to resolved
-        if incident.resolved_at:
-            created_event['end'] = incident.resolved_at.isoformat()
-            created_event['title'] = f"#{incident.id}: {incident.title} (Resolved)"
-            # Also add a separate marker for resolution date
-            events.append({
-                'id': f"{incident.id}_resolved",
-                'title': f"#{incident.id}: Resolved",
-                'start': incident.resolved_at.isoformat(),
-                'backgroundColor': '#28a745',  # Green for resolved
-                'borderColor': '#28a745',
-                'url': f"/manage/{incident.id}/",
-                'extendedProps': {
-                    'status': incident.status,
-                    'reporter': incident.user.username,
-                    'event_type': 'resolved'
-                }
-            })
-        
-        events.append(created_event)
-    
     return JsonResponse(events, safe=False)
 
 @login_required
@@ -476,4 +468,21 @@ def incident_calendar(request):
     """
     if not request.user.is_staff:
         return redirect('home')
-    return render(request, 'calender.html')
+    
+    # Get all staff members from Django admin (is_staff=True)
+    # This includes all staff like "admin" and "admin 1"
+    all_staff_members = User.objects.filter(
+        is_staff=True
+    ).distinct().order_by('username')
+    
+    # Get current filter values
+    status_filter = request.GET.get('status', '')
+    admin_filter = request.GET.get('admin', '')
+    
+    context = {
+        'staff_members': all_staff_members,
+        'status_filter': status_filter,
+        'admin_filter': admin_filter,
+    }
+    
+    return render(request, 'calender.html', context)

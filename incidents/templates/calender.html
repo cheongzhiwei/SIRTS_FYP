@@ -41,26 +41,62 @@
         </a>
     </div>
 
+    <!-- Filters -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <form method="GET" id="calendarFilters" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Filter by Status</label>
+                    <select name="status" id="statusFilter" class="form-select form-select-sm">
+                        <option value="">All Statuses</option>
+                        <option value="Open" {% if status_filter == 'Open' %}selected{% endif %}>Open</option>
+                        <option value="Resolved" {% if status_filter == 'Resolved' %}selected{% endif %}>Self Fixed</option>
+                        <option value="Closed" {% if status_filter == 'Closed' %}selected{% endif %}>Closed</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Filter by Staff (Resolved By)</label>
+                    <select name="admin" id="adminFilter" class="form-select form-select-sm">
+                        <option value="">All Staff</option>
+                        {% for staff in staff_members %}
+                        <option value="{{ staff.id }}" {% if admin_filter == staff.id|stringformat:"s" %}selected{% endif %}>
+                            {{ staff.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary btn-sm me-2">
+                        <i class="fas fa-filter"></i> Apply Filters
+                    </button>
+                    <a href="{% url 'incident_calendar' %}" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-times"></i> Clear
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Legend -->
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body">
             <div class="calendar-legend">
                 <div class="legend-item">
                     <div class="legend-color" style="background-color: #dc3545;"></div>
-                    <span><strong>Open</strong> - Incident Created</span>
+                    <span><strong>Open</strong> - Date incident was opened</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-color" style="background-color: #007bff;"></div>
-                    <span><strong>Self Fixed</strong> - Incident Created</span>
+                    <span><strong>Self Fixed</strong> - Date incident was self-resolved</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-color" style="background-color: #28a745;"></div>
-                    <span><strong>Closed/Resolved</strong> - Incident Created or Resolved</span>
+                    <span><strong>Closed</strong> - Date incident was closed by staff</span>
                 </div>
             </div>
             <p class="text-muted small mb-0 mt-2">
                 <i class="fas fa-info-circle"></i> Click on any event to view ticket details. 
-                Events show when incidents were created. Green events also show when incidents were resolved.
+                Each event represents a single-day entry showing when the incident was opened, self-fixed, or closed.
             </p>
         </div>
     </div>
@@ -76,30 +112,70 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var calendarEl = document.getElementById('calendar');
+    
+    // Function to build the events URL with current filter values
+    function getEventsUrl() {
+        var baseUrl = "{% url 'calendar_data' %}";
+        var status = document.getElementById('statusFilter').value;
+        var admin = document.getElementById('adminFilter').value;
+        var params = [];
+        
+        if (status) {
+            params.push('status=' + encodeURIComponent(status));
+        }
+        if (admin) {
+            params.push('admin=' + encodeURIComponent(admin));
+        }
+        
+        if (params.length > 0) {
+            return baseUrl + '?' + params.join('&');
+        }
+        return baseUrl;
+    }
+    
     var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
-            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+            right: 'dayGridMonth,listMonth'
         },
-        // Fetch data from our JSON view
-        events: "{% url 'calendar_data' %}",
+        // Fetch data from our JSON view with filters
+        events: function(fetchInfo, successCallback, failureCallback) {
+            fetch(getEventsUrl())
+                .then(response => response.json())
+                .then(data => successCallback(data))
+                .catch(error => {
+                    console.error('Error fetching calendar events:', error);
+                    failureCallback(error);
+                });
+        },
         eventClick: function(info) {
             if (info.event.url) {
                 window.location.href = info.event.url;
                 return false;
             }
         },
-        eventDisplay: 'block',
-        eventTimeFormat: {
-            hour: '2-digit',
-            minute: '2-digit',
-            meridiem: 'short'
-        },
+        // Ensure single-day events are displayed correctly
+        displayEventTime: false, // Hide time for all-day events
+        allDayText: '', // Remove "all day" text label
         height: 'auto'
     });
     calendar.render();
+    
+    // Refresh calendar when filters change
+    document.getElementById('calendarFilters').addEventListener('submit', function(e) {
+        e.preventDefault();
+        calendar.refetchEvents();
+    });
+    
+    // Also refresh on filter change (optional - for instant updates)
+    document.getElementById('statusFilter').addEventListener('change', function() {
+        calendar.refetchEvents();
+    });
+    document.getElementById('adminFilter').addEventListener('change', function() {
+        calendar.refetchEvents();
+    });
 });
 </script>
 {% endblock %}

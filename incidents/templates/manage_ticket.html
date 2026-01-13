@@ -29,26 +29,12 @@
                         {% endif %}
                     </div>
 
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-info-circle"></i> <strong>Note:</strong> To edit ticket content or delete tickets, please use the <a href="/admin/incidents/incident/{{ ticket.id }}/change/" target="_blank" class="alert-link">Django Admin</a>.
+                    </div>
+
                     <form method="post">
                         {% csrf_token %}
-                        
-                        {% if user.is_superuser %}
-                        <div class="alert alert-info mb-3">
-                            <i class="fas fa-shield-alt"></i> <strong>Superadmin Mode:</strong> You can edit ticket content and delete tickets.
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Issue Title</label>
-                            <input type="text" name="title" class="form-control" value="{{ ticket.title }}" maxlength="200">
-                            <small class="form-text text-muted">Edit the issue title (max 10 words recommended).</small>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Issue Description</label>
-                            <textarea name="description" class="form-control" rows="5" placeholder="Enter issue description...">{{ ticket.description }}</textarea>
-                            <small class="form-text text-muted">Edit the full issue description.</small>
-                        </div>
-                        {% endif %}
                         
                         <div class="mb-3">
                             <label class="form-label fw-bold">Update Status</label>
@@ -67,11 +53,6 @@
 
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-success flex-fill">💾 Save Changes</button>
-                            {% if user.is_superuser %}
-                            <button type="submit" name="delete_ticket" class="btn btn-danger" onclick="return confirm('Are you sure you want to delete ticket #{{ ticket.id }}? This action cannot be undone.');">
-                                🗑️ Delete Ticket
-                            </button>
-                            {% endif %}
                         </div>
                     </form>
                 </div>
