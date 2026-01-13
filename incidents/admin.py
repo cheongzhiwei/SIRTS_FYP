@@ -152,9 +152,28 @@ class UserAdmin(BaseUserAdmin):
 # 5. Define custom Incident Admin
 class IncidentAdmin(admin.ModelAdmin):
     list_display = ('id', 'get_reporter_user', 'title', 'get_date_created', 'get_date_close', 'get_status_display')
-    list_filter = ()  # No sidebar filters - using custom template filter below search
-    search_fields = ('title', 'user__username', 'reporter_name', 'description')  # Search box above the table
+    # Add 'user' to list_filter to get a clickable sidebar filter
+    list_filter = ('user', 'status', DateRangeFilter) 
+    # Ensure 'user__username' is in search_fields so you can type the name in the search box
+    search_fields = ('id', 'title', 'user__username', 'reporter_name', 'description')
+    # This makes the user selection a searchable dropdown instead of a long list
+    autocomplete_fields = ['user']
+    list_filter = (
+        ('created_at', DateFieldListFilter), 
+        'status'
+    )
     readonly_fields = ('created_at', 'resolved_at', 'resolved_by')
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        
+        # Setting these to False removes the buttons from the bottom of the edit page
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        
+        return super().change_view(
+            request, object_id, form_url, extra_context=extra_context,
+        )
     
     def get_queryset(self, request):
         qs = super().get_queryset(request)

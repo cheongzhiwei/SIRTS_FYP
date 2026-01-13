@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+<style>
+    #calendar {
+        max-width: 100%;
+        margin: 0 auto;
+    }
+    .fc-event {
+        cursor: pointer;
+    }
+    .fc-event:hover {
+        opacity: 0.8;
+    }
+    .calendar-legend {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold"><i class="fas fa-calendar-alt"></i> Incident Calendar</h2>
+        <a href="{% url 'admin_dashboard' %}" class="btn btn-outline-primary">
+            <i class="fas fa-list"></i> Back to List View
+        </a>
+    </div>
+
+    <!-- Legend -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="calendar-legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #dc3545;"></div>
+                    <span><strong>Open</strong> - Incident Created</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #007bff;"></div>
+                    <span><strong>Self Fixed</strong> - Incident Created</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #28a745;"></div>
+                    <span><strong>Closed/Resolved</strong> - Incident Created or Resolved</span>
+                </div>
+            </div>
+            <p class="text-muted small mb-0 mt-2">
+                <i class="fas fa-info-circle"></i> Click on any event to view ticket details. 
+                Events show when incidents were created. Green events also show when incidents were resolved.
+            </p>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body bg-white p-4">
+            <div id="calendar"></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar');
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay'
+        },
+        // Fetch data from our JSON view
+        events: "{% url 'calendar_data' %}",
+        eventClick: function(info) {
+            if (info.event.url) {
+                window.location.href = info.event.url;
+                return false;
+            }
+        },
+        eventDisplay: 'block',
+        eventTimeFormat: {
+            hour: '2-digit',
+            minute: '2-digit',
+            meridiem: 'short'
+        },
+        height: 'auto'
+    });
+    calendar.render();
+});
+</script>
+{% endblock %}

@@ -15,4 +15,8 @@ urlpatterns = [
     path('login/', views.user_login, name='login'),
     path('logout/', views.user_logout, name='logout'),
     path('register/', views.register, name='register'),
+
+    # Calendar
+    path('calendar/', views.incident_calendar, name='incident_calendar'), # The page itself
+    path('calendar/data/', views.incident_calendar_data, name='calendar_data'), 
 ]

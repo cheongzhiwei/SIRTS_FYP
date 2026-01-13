@@ -6,6 +6,7 @@ from django.contrib import messages
 from .models import Incident
 from datetime import datetime, timedelta, date
 from django.utils import timezone
+from django.http import JsonResponse
 
 @login_required
 def home(request):
@@ -404,3 +405,75 @@ def register(request):
     else:
         form = UserCreationForm()
     return render(request, 'register.html', {'form': form})
+
+from django.http import JsonResponse
+
+@login_required
+def incident_calendar_data(request):
+    """
+    Returns JSON data for calendar events.
+    Shows incidents with created date and resolved date (if available).
+    Like Google Calendar, shows when incidents were created and when they were resolved.
+    """
+    if not request.user.is_staff:
+        return JsonResponse([], safe=False)
+    
+    # Fetch all incidents for the calendar
+    incidents = Incident.objects.all()
+    events = []
+    
+    for incident in incidents:
+        # Determine color based on status
+        color = '#dc3545'  # Red for Open
+        if incident.status == 'Resolved':
+            color = '#007bff'  # Blue for Self-Fixed
+        elif incident.status == 'Closed':
+            color = '#28a745'  # Green for Closed
+        
+        # Create event for incident creation
+        created_event = {
+            'id': f"{incident.id}_created",
+            'title': f"#{incident.id}: {incident.title}",
+            'start': incident.created_at.isoformat(),
+            'backgroundColor': color,
+            'borderColor': color,
+            'url': f"/manage/{incident.id}/",
+            'extendedProps': {
+                'status': incident.status,
+                'reporter': incident.user.username,
+                'event_type': 'created'
+            }
+        }
+        
+        # If resolved, show as a date range from created to resolved
+        if incident.resolved_at:
+            created_event['end'] = incident.resolved_at.isoformat()
+            created_event['title'] = f"#{incident.id}: {incident.title} (Resolved)"
+            # Also add a separate marker for resolution date
+            events.append({
+                'id': f"{incident.id}_resolved",
+                'title': f"#{incident.id}: Resolved",
+                'start': incident.resolved_at.isoformat(),
+                'backgroundColor': '#28a745',  # Green for resolved
+                'borderColor': '#28a745',
+                'url': f"/manage/{incident.id}/",
+                'extendedProps': {
+                    'status': incident.status,
+                    'reporter': incident.user.username,
+                    'event_type': 'resolved'
+                }
+            })
+        
+        events.append(created_event)
+    
+    return JsonResponse(events, safe=False)
+
+@login_required
+def incident_calendar(request):
+    """
+    Renders the calendar page.
+    Shows incidents when created and when resolved (like Google Calendar).
+    """
+    if not request.user.is_staff:
+        return redirect('home')
+    return render(request, 'calender.html')
