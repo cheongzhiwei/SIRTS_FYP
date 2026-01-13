@@ -127,4 +127,5 @@ SHORT_DATETIME_FORMAT = 'd/m/Y H:i'
 
 STATIC_URL = 'static/'
 
+LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'report_incident'

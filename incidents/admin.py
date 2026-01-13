@@ -151,11 +151,20 @@ class UserAdmin(BaseUserAdmin):
 
 # 5. Define custom Incident Admin
 class IncidentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'get_reporter_user', 'title', 'get_date_created', 'get_date_close', 'get_status_display')
+    list_display = (
+        'id', 
+        'title', 
+        'user', 
+        'department', 
+        'laptop_model', 
+        'laptop_serial',  # The "Snapshot" serial number
+        'status', 
+        'created_at'
+    )
     # Add 'user' to list_filter to get a clickable sidebar filter
-    list_filter = ('user', 'status', DateRangeFilter) 
+    list_filter = ('user', 'status', 'laptop_model',DateRangeFilter) 
     # Ensure 'user__username' is in search_fields so you can type the name in the search box
-    search_fields = ('id', 'title', 'user__username', 'reporter_name', 'description')
+    search_fields = ('id', 'title', 'user__username', 'reporter_name', 'description', 'laptop_model', 'laptop_serial', 'department')
     # This makes the user selection a searchable dropdown instead of a long list
     autocomplete_fields = ['user']
     list_filter = (

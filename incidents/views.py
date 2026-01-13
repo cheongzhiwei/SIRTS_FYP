@@ -141,8 +141,15 @@ def home(request):
 def report_incident(request):
     if request.method == 'POST':
         title = request.POST.get('title')
+        action_type = request.POST.get('action_type')
         status_value = request.POST.get('status', 'Open')
         smart_suggestions = request.POST.get('smart_suggestions', '')
+        
+        # Handle action_type from final_report.html form
+        if action_type == 'solved':
+            status_value = 'Resolved'
+        elif action_type == 'submit':
+            status_value = 'Open'
         
         # Validate title word count (max 10 words)
         if title:
@@ -166,13 +173,24 @@ def report_incident(request):
         elif not description:
             description = "Reported via Smart Scanner"
 
-        # Create incident
-        incident = Incident.objects.create(
+        # 1. Create the incident object but don't save to DB yet
+        incident = Incident(
             user=request.user,
             title=title,
             description=description,
             status=status_value
         )
+        
+        # 2. THE STRENGTHENING STEP: Auto-pull profile data
+        # We look up the EmployeeProfile to "lock" the hardware info into the ticket
+        profile = getattr(request.user, 'employeeprofile', None)
+        if profile:
+            incident.laptop_model = profile.laptop_model
+            incident.laptop_serial = profile.laptop_serial # Snapshot serial number
+            incident.department = profile.get_department_display()
+            
+        # 3. Save the incident with the "Snapshot" locked in
+        incident.save()
         
         # If self-fixed, set resolved_at to created_at (same date)
         if status_value == 'Resolved':
