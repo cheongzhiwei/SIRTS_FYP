@@ -66,7 +66,7 @@
                 <ul class="navbar-nav">
                     {% if user.is_authenticated %}
                         
-                        {% if user.is_superuser %}
+                        {% if user.is_staff %}
                         <li class="nav-item">
                             <a class="nav-link text-warning fw-bold" href="{% url 'admin_dashboard' %}">
                                 📊 Admin Dashboard

@@ -34,6 +34,7 @@ class EmployeeProfile(models.Model):
 
 # 2. INCIDENT TICKET MODEL
 class Incident(models.Model):
+
     # Link to the logged-in user
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     
@@ -44,7 +45,7 @@ class Incident(models.Model):
     # ASSET HISTORY LEDGER FIELDS
     # We add these to "Snapshot" the hardware at the time of the report
     laptop_model = models.CharField(max_length=100, blank=True, null=True)
-    laptop_serial = models.CharField(max_length=100, blank=True, null=True) # Add this field
+    laptop_serial = models.CharField(max_length=100, blank=True, null=True)
     department = models.CharField(max_length=100, blank=True, null=True)
     
     # Manual Reporting Fields (For when they type it in manually)

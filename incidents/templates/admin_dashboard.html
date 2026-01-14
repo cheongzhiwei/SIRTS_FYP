@@ -167,8 +167,14 @@
                     <tr>
                         <td class="fw-bold">#{{ incident.id }}</td>
                         <td>{{ incident.user.username }}</td>
-                        <td>{{ incident.user.userprofile.department|default:"General" }}</td>
-                        <td>{{ incident.user.userprofile.laptop_model|default:"N/A" }}</td>
+                        <td>{{ incident.department|default:"General" }}</td>
+    
+                        <td>
+                            {{ incident.laptop_model|default:"N/A" }}
+                            <br>
+                            <small class="text-muted">Serial: {{ incident.laptop_serial|default:"-" }}</small>
+                        </td>
+    
                         <td>{{ incident.title }}</td>
                         <td>{{ incident.created_at|date:"d/m/Y" }}</td>
                         <td>
