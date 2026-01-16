@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.contrib import messages
-from .models import Incident
+from .models import Incident, EmployeeProfile
 from datetime import datetime, timedelta, date
 from django.utils import timezone
 from django.http import JsonResponse
@@ -221,6 +221,9 @@ def admin_dashboard(request):
     from_date = request.GET.get('from')
     to_date = request.GET.get('to')
     dept_filter = request.GET.get('dept')
+    serial_filter = request.GET.get('serial')  # Filter by laptop serial number
+    view_user = request.GET.get('view_user')  # View all history for a specific user
+    view_serial = request.GET.get('view_serial')  # View all history for a specific laptop serial
 
     # Period filtering (today, week, month, all)
     today = timezone.now().date()
@@ -273,42 +276,60 @@ def admin_dashboard(request):
         else:  # 'all'
             return base_queryset
     
-    # Apply period/date range filtering to incidents
-    incidents = get_period_queryset(incidents)
+    # If viewing specific user or serial history, bypass period filter and show all
+    if view_user:
+        incidents = incidents.filter(user__username=view_user)
+        # Don't apply period filter when viewing user history
+    elif view_serial:
+        incidents = incidents.filter(laptop_serial=view_serial)
+        # Don't apply period filter when viewing serial history
+    else:
+        # Apply period/date range filtering to incidents
+        incidents = get_period_queryset(incidents)
 
     # Status filtering
     if status_filter:
         incidents = incidents.filter(status=status_filter)
     
-    # User filtering
-    if user_filter:
+    # User filtering (only if not viewing specific user)
+    if user_filter and not view_user:
         incidents = incidents.filter(user__username__icontains=user_filter)
     
-    # Department filtering
+    # Department filtering - filter by user's current department from EmployeeProfile
     if dept_filter:
         incidents = incidents.filter(user__employeeprofile__department=dept_filter)
     
     # Model filtering (if laptop model exists)
     if model_filter:
-        incidents = incidents.filter(user__employeeprofile__laptop_model__icontains=model_filter)
+        incidents = incidents.filter(laptop_model__icontains=model_filter)
+    
+    # Serial filtering (only if not viewing specific serial)
+    if serial_filter and not view_serial:
+        incidents = incidents.filter(laptop_serial__icontains=serial_filter)
 
     # Summary Counts - apply ALL filters (except status) to status bar counts
     # This ensures status bars reflect the current filter context
     status_bar_base = Incident.objects.all()
     
-    # Apply period/date range filter
-    status_bar_base = get_period_queryset(status_bar_base)
+    # If viewing specific user or serial history, show all history (no period filter)
+    if view_user:
+        status_bar_base = status_bar_base.filter(user__username=view_user)
+    elif view_serial:
+        status_bar_base = status_bar_base.filter(laptop_serial=view_serial)
+    else:
+        # Apply period/date range filter
+        status_bar_base = get_period_queryset(status_bar_base)
     
-    # Apply department filter (if set)
+    # Apply department filter (if set) - filter by user's current department from EmployeeProfile
     if dept_filter:
         status_bar_base = status_bar_base.filter(user__employeeprofile__department=dept_filter)
     
     # Apply laptop model filter (if set)
     if model_filter:
-        status_bar_base = status_bar_base.filter(user__employeeprofile__laptop_model__icontains=model_filter)
+        status_bar_base = status_bar_base.filter(laptop_model__icontains=model_filter)
     
     # Apply user filter (if set) - this might be useful for status bars too
-    if user_filter:
+    if user_filter and not view_user:
         status_bar_base = status_bar_base.filter(user__username__icontains=user_filter)
     
     # Note: We don't apply status filter to status_bar_base because we want to count all statuses
@@ -343,6 +364,18 @@ def admin_dashboard(request):
             except ValueError:
                 to_date_display = to_date
     
+    # Get context info for display
+    view_user_display = None
+    view_serial_display = None
+    if view_user:
+        try:
+            user_obj = User.objects.get(username=view_user)
+            view_user_display = user_obj.username
+        except User.DoesNotExist:
+            pass
+    if view_serial:
+        view_serial_display = view_serial
+    
     context = {
         'incidents': incidents,
         'open_count': status_bar_base.filter(status='Open').count(),
@@ -353,6 +386,9 @@ def admin_dashboard(request):
         'period_filter': period_filter,  # Pass period to template
         'from_date_display': from_date_display,  # Formatted date for display
         'to_date_display': to_date_display,  # Formatted date for display
+        'view_user': view_user_display,  # User being viewed
+        'view_serial': view_serial_display,  # Serial being viewed
+        'department_choices': EmployeeProfile.DEPARTMENT_CHOICES,  # Department choices for dropdown
     }
     return render(request, 'admin_dashboard.html', context)
 @login_required

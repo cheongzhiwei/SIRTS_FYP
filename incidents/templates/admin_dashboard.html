@@ -25,6 +25,22 @@
 .flatpickr-today-button:active {
     background: #004085;
 }
+
+/* Style for clickable username and serial links */
+a[href*="view_user"], a[href*="view_serial"] {
+    color: #0d6efd;
+    transition: all 0.2s;
+}
+
+a[href*="view_user"]:hover, a[href*="view_serial"]:hover {
+    color: #0a58ca;
+    text-decoration: underline !important;
+}
+
+a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
+    font-size: 0.7em;
+    margin-left: 3px;
+}
 </style>
 {% endblock %}
 
@@ -123,8 +139,9 @@
                     <label class="form-label small fw-bold">Department</label>
                     <select name="dept" class="form-select form-select-sm">
                         <option value="">All Depts</option>
-                        <option value="IT" {% if request.GET.dept == 'IT' %}selected{% endif %}>IT</option>
-                        <option value="HR" {% if request.GET.dept == 'HR' %}selected{% endif %}>HR</option>
+                        {% for dept_code, dept_name in department_choices %}
+                            <option value="{{ dept_code }}" {% if request.GET.dept == dept_code %}selected{% endif %}>{{ dept_name }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -145,8 +162,20 @@
 
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0 fw-bold">Ticket List</h5>
-            <span class="badge bg-light text-dark border">Showing: {{ incidents.count }} tickets</span>
+            <h5 class="mb-0 fw-bold">
+                Ticket List
+                {% if view_user %}
+                    <small class="text-muted">- History for user: <strong>{{ view_user }}</strong></small>
+                {% elif view_serial %}
+                    <small class="text-muted">- History for laptop serial: <strong>{{ view_serial }}</strong></small>
+                {% endif %}
+            </h5>
+            <div class="d-flex align-items-center gap-2">
+                {% if view_user or view_serial %}
+                    <a href="{% url 'admin_dashboard' %}" class="btn btn-sm btn-outline-secondary">Clear Filter</a>
+                {% endif %}
+                <span class="badge bg-light text-dark border">Showing: {{ incidents.count }} tickets</span>
+            </div>
         </div>
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
@@ -166,15 +195,36 @@
                     {% for incident in incidents %}
                     <tr>
                         <td class="fw-bold">#{{ incident.id }}</td>
-                        <td>{{ incident.user.username }}</td>
+                        <td>
+                            {% if view_user %}
+                                {{ incident.user.username }}
+                            {% else %}
+                                <a href="{% url 'admin_dashboard' %}?view_user={{ incident.user.username|urlencode }}" class="text-decoration-none fw-semibold" title="View all history for {{ incident.user.username }}">
+                                    {{ incident.user.username }}
+                                    <i class="fas fa-link text-primary small"></i>
+                                </a>
+                            {% endif %}
+                        </td>
                         <td>{{ incident.department|default:"General" }}</td>
-    
                         <td>
                             {{ incident.laptop_model|default:"N/A" }}
                             <br>
-                            <small class="text-muted">Serial: {{ incident.laptop_serial|default:"-" }}</small>
+                            {% if incident.laptop_serial %}
+                                {% if view_serial %}
+                                    <small class="text-muted">Serial: {{ incident.laptop_serial }}</small>
+                                {% else %}
+                                    <small class="text-muted">
+                                        Serial: 
+                                        <a href="{% url 'admin_dashboard' %}?view_serial={{ incident.laptop_serial|urlencode }}" class="text-decoration-none" title="View all history for this laptop">
+                                            {{ incident.laptop_serial }}
+                                            <i class="fas fa-link text-primary small"></i>
+                                        </a>
+                                    </small>
+                                {% endif %}
+                            {% else %}
+                                <small class="text-muted">Serial: -</small>
+                            {% endif %}
                         </td>
-    
                         <td>{{ incident.title }}</td>
                         <td>{{ incident.created_at|date:"d/m/Y" }}</td>
                         <td>
