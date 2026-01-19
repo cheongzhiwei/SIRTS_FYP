@@ -9,9 +9,14 @@ from datetime import datetime, timedelta, date
 from django.utils import timezone
 from django.http import JsonResponse
 from django.urls import reverse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import json
+import requests
 
 @login_required
 def home(request):
+
     # Shows the user's own incident history with status overview
     incidents = Incident.objects.filter(user=request.user).order_by('-created_at')
     
@@ -201,6 +206,21 @@ def report_incident(request):
             messages.success(request, "🎉 Great! Your issue is recorded as Self-Fixed.")
         else:
             messages.success(request, "Ticket submitted successfully. IT will review it.")
+        
+        # Trigger n8n Webhook
+        n8n_url = "http://localhost:5678/webhook-test/new-incident"
+        payload = {
+            "ticket_id": incident.id,
+            "title": incident.title,
+            "department": incident.department,
+            "laptop_serial": incident.laptop_serial,  # Uses your hardware snapshot
+            "reported_by": request.user.username
+        }
+        
+        try:
+            requests.post(n8n_url, json=payload, timeout=5)
+        except Exception as e:
+            print(f"n8n Webhook failed: {e}")
             
         return redirect('home')
 
@@ -540,3 +560,114 @@ def incident_calendar(request):
     }
     
     return render(request, 'calender.html', context)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def n8n_webhook_new_incident(request):
+    """
+    Webhook endpoint for n8n to send new incident data.
+    Accepts POST requests with JSON payload from n8n.
+    """
+    try:
+        # Parse JSON data from n8n
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            # Fallback to form data
+            data = request.POST.dict()
+        
+        # Extract incident data from payload
+        title = data.get('title', '')
+        description = data.get('description', '')
+        status = data.get('status', 'Open')
+        
+        # Get user - try by username, email, or user_id
+        user = None
+        if 'user_id' in data:
+            try:
+                user = User.objects.get(id=data['user_id'])
+            except User.DoesNotExist:
+                pass
+        elif 'username' in data:
+            try:
+                user = User.objects.get(username=data['username'])
+            except User.DoesNotExist:
+                pass
+        elif 'email' in data:
+            try:
+                user = User.objects.get(email=data['email'])
+            except User.DoesNotExist:
+                pass
+        
+        # If no user found, use a default user or return error
+        if not user:
+            # Try to get or create a default system user
+            user, created = User.objects.get_or_create(
+                username='system',
+                defaults={'email': 'system@example.com'}
+            )
+        
+        # Validate title word count (max 10 words)
+        if title:
+            title_words = title.strip().split()
+            if len(title_words) > 10:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Issue title cannot exceed 10 words.'
+                }, status=400)
+        
+        # Create the incident
+        incident = Incident(
+            user=user,
+            title=title or 'Incident from n8n',
+            description=description or 'Reported via n8n webhook',
+            status=status
+        )
+        
+        # Try to populate from EmployeeProfile if available
+        profile = getattr(user, 'employeeprofile', None)
+        if profile:
+            incident.laptop_model = profile.laptop_model
+            incident.laptop_serial = profile.laptop_serial
+            incident.department = profile.get_department_display()
+        
+        # Override with data from webhook if provided
+        if 'laptop_model' in data:
+            incident.laptop_model = data['laptop_model']
+        if 'laptop_serial' in data:
+            incident.laptop_serial = data['laptop_serial']
+        if 'department' in data:
+            incident.department = data['department']
+        if 'reporter_name' in data:
+            incident.reporter_name = data['reporter_name']
+        if 'email' in data:
+            incident.email = data['email']
+        
+        # Save the incident
+        incident.save()
+        
+        # If status is Resolved, set resolved_at
+        if status == 'Resolved':
+            incident.resolved_at = incident.created_at
+            incident.save()
+        
+        # Return success response
+        return JsonResponse({
+            'success': True,
+            'incident_id': incident.id,
+            'message': 'Incident created successfully',
+            'ticket_id': incident.id,
+            'title': incident.title,
+            'status': incident.status
+        }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON payload'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)

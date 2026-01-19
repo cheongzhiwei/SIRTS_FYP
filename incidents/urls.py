@@ -18,5 +18,8 @@ urlpatterns = [
 
     # Calendar
     path('calendar/', views.incident_calendar, name='incident_calendar'), # The page itself
-    path('calendar/data/', views.incident_calendar_data, name='calendar_data'), 
+    path('calendar/data/', views.incident_calendar_data, name='calendar_data'),
+    
+    # Webhook endpoint for n8n
+    path('webhook-test/new-incident/', views.n8n_webhook_new_incident, name='n8n_webhook_new_incident'),
 ]
