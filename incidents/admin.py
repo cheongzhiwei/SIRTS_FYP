@@ -6,7 +6,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.db.models import Q
 from datetime import datetime, timedelta
-from .models import Incident, EmployeeProfile, UserProfile
+from .models import Incident, EmployeeProfile, UserProfile, Comment, CommentRead
 
 # Custom Date Range Filter
 class DateRangeFilter(admin.SimpleListFilter):
@@ -265,6 +265,29 @@ class IncidentAdmin(admin.ModelAdmin):
     get_status_display.short_description = 'Status'
     get_status_display.admin_order_field = 'status'
 
+# 6. Define Comment Admin
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ('id', 'incident', 'user', 'created_at', 'message_preview')
+    list_filter = ('created_at', 'user')
+    search_fields = ('message', 'user__username', 'incident__title', 'incident__id')
+    readonly_fields = ('created_at',)
+    
+    def message_preview(self, obj):
+        """Show first 50 characters of message"""
+        if len(obj.message) > 50:
+            return obj.message[:50] + '...'
+        return obj.message
+    message_preview.short_description = 'Message Preview'
+
+# 7. Define CommentRead Admin
+class CommentReadAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'incident', 'last_read_at')
+    list_filter = ('last_read_at', 'user')
+    search_fields = ('user__username', 'incident__title', 'incident__id')
+    readonly_fields = ('last_read_at',)
+
 admin.site.unregister(User)
 admin.site.register(User, UserAdmin)
 admin.site.register(Incident, IncidentAdmin)
+admin.site.register(Comment, CommentAdmin)
+admin.site.register(CommentRead, CommentReadAdmin)

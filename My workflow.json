@@ -21,8 +21,23 @@
     {
       "parameters": {
         "chatId": "8119891894",
-        "text": "=🚨 SIRTS Alert Issue: {{ $json.body.title }} Hardware SN: {{ $json.body.laptop_serial }} Reported By: {{ $json.body.reported_by }}",
-        "additionalFields": {}
+        "text": "=🚨 SIRTS Alert\n\nIssue: {{ $json.body.title }}\nTicket ID: #{{ $json.body.ticket_id }}\nHardware SN: {{ $json.body.laptop_serial }}\nDepartment: {{ $json.body.department }}\nReported By: {{ $json.body.reported_by }}\n\nPlease acknowledge or leave a message:",
+        "additionalFields": {
+          "reply_markup": {
+            "inline_keyboard": [
+              [
+                {
+                  "text": "✅ Acknowledge",
+                  "callback_data": "ack_{{ $json.body.ticket_id }}"
+                },
+                {
+                  "text": "💬 Leave Message",
+                  "callback_data": "msg_{{ $json.body.ticket_id }}"
+                }
+              ]
+            ]
+          }
+        }
       },
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,

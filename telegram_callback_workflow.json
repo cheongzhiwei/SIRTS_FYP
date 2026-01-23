@@ -1,0 +1,197 @@
+{
+  "name": "Telegram Callback Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ]
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "webhookId": "telegram-callback-webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "vw2Z20Csxjfw8HNC",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.callback_query.data }}",
+              "operation": "startsWith",
+              "value2": "ack_"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.0,
+      "position": [
+        200,
+        0
+      ],
+      "id": "if-acknowledge",
+      "name": "If Acknowledge"
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/webhook/telegram/acknowledge/{{ $json.callback_query.data.replace('ack_', '') }}/",
+        "authentication": "none",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "telegram_user_id",
+              "value": "={{ $json.callback_query.from.id }}"
+            },
+            {
+              "name": "telegram_username",
+              "value": "={{ $json.callback_query.from.username || $json.callback_query.from.first_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        -100
+      ],
+      "id": "http-acknowledge",
+      "name": "HTTP Request - Acknowledge"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.callback_query.data }}",
+              "operation": "startsWith",
+              "value2": "msg_"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.0,
+      "position": [
+        200,
+        100
+      ],
+      "id": "if-message",
+      "name": "If Leave Message"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.callback_query.message.chat.id }}",
+        "text": "=Please send your status message for ticket #{{ $json.callback_query.data.replace('msg_', '') }}:\n\n(e.g., 'Waiting for parts', 'Cannot finish today', etc.)",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        100
+      ],
+      "id": "telegram-prompt",
+      "name": "Prompt for Message",
+      "credentials": {
+        "telegramApi": {
+          "id": "vw2Z20Csxjfw8HNC",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.callback_query.message.chat.id }}",
+        "text": "=✅ Ticket #{{ $json.callback_query.data.replace('ack_', '') }} has been acknowledged!",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        -100
+      ],
+      "id": "telegram-confirm-ack",
+      "name": "Confirm Acknowledge",
+      "credentials": {
+        "telegramApi": {
+          "id": "vw2Z20Csxjfw8HNC",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "If Acknowledge",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If Leave Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Acknowledge": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request - Acknowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request - Acknowledge": {
+      "main": [
+        [
+          {
+            "node": "Confirm Acknowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Leave Message": {
+      "main": [
+        [
+          {
+            "node": "Prompt for Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "telegram-callback-v1",
+  "meta": {},
+  "tags": []
+}

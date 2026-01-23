@@ -131,6 +131,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                     <select name="status" class="form-select form-select-sm">
                         <option value="">All Statuses</option>
                         <option value="Open" {% if request.GET.status == 'Open' %}selected{% endif %}>Open</option>
+                        <option value="In Progress" {% if request.GET.status == 'In Progress' %}selected{% endif %}>In Progress</option>
                         <option value="Resolved" {% if request.GET.status == 'Resolved' %}selected{% endif %}>Self Fixed</option>
                         <option value="Closed" {% if request.GET.status == 'Closed' %}selected{% endif %}>Closed</option>
                     </select>
@@ -188,11 +189,13 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                         <th>Issue Title</th>
                         <th>Date Reported</th>
                         <th>Status</th>
+                        <th>IT Status</th>
                         <th class="text-center">Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for incident in incidents %}
+                    {% for item in incidents_with_unread %}
+                    {% with incident=item.incident %}
                     <tr>
                         <td class="fw-bold">#{{ incident.id }}</td>
                         <td>
@@ -230,18 +233,44 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                         <td>
                             {% if incident.status == 'Open' %}
                                 <span class="badge bg-danger rounded-pill px-3">Open</span>
+                            {% elif incident.status == 'In Progress' %}
+                                <span class="badge bg-warning rounded-pill px-3">In Progress</span>
                             {% elif incident.status == 'Resolved' %}
                                 <span class="badge bg-primary rounded-pill px-3">Self Fixed</span>
                             {% else %}
                                 <span class="badge bg-success rounded-pill px-3">Closed</span>
                             {% endif %}
                         </td>
+                        <td>
+                            {% if incident.it_acknowledged %}
+                                <span class="badge bg-info rounded-pill px-2 mb-1 d-block">
+                                    <i class="fas fa-check-circle"></i> Acknowledged
+                                </span>
+                                {% if incident.it_status_message %}
+                                    <div class="mt-1 p-2 bg-light border rounded small">
+                                        <strong>IT Message:</strong><br>
+                                        {{ incident.it_status_message|truncatewords:10 }}
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary rounded-pill px-2">Not Acknowledged</span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">
-                            <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary btn-sm px-3">Manage</a>
+                            <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary btn-sm px-3 position-relative" onclick="markCommentsRead({{ incident.id }})">
+                                Manage
+                                {% if item.unread_comments_count > 0 %}
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                    {{ item.unread_comments_count }}
+                                    <span class="visually-hidden">unread comments</span>
+                                </span>
+                                {% endif %}
+                            </a>
                         </td>
                     </tr>
+                    {% endwith %}
                     {% empty %}
-                    <tr><td colspan="8" class="text-center py-4 text-muted">No results found.</td></tr>
+                    <tr><td colspan="9" class="text-center py-4 text-muted">No results found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -378,6 +407,39 @@ function clearDateFilters(button) {
     }
     
     // The form will submit automatically since it's a submit button
+}
+
+// Get CSRF token from cookies
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Mark comments as read when clicking Manage button
+function markCommentsRead(ticketId) {
+    const csrftoken = getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+    if (!csrftoken) {
+        console.error('CSRF token not found');
+        return;
+    }
+    fetch(`/mark-comments-read/${ticketId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+    }).catch(err => console.error('Error marking comments as read:', err));
 }
 </script>
 {% endblock %}

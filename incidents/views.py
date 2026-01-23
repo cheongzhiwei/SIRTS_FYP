@@ -4,7 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.contrib import messages
-from .models import Incident, EmployeeProfile
+from .models import Incident, EmployeeProfile, Comment, CommentRead
 from datetime import datetime, timedelta, date
 from django.utils import timezone
 from django.http import JsonResponse
@@ -18,7 +18,7 @@ import requests
 def home(request):
 
     # Shows the user's own incident history with status overview
-    incidents = Incident.objects.filter(user=request.user).order_by('-created_at')
+    incidents = Incident.objects.filter(user=request.user).prefetch_related('comments').order_by('-created_at')
     
     # Get filter parameters
     status_filter = request.GET.get('status')
@@ -74,12 +74,13 @@ def home(request):
     if status_filter:
         incidents = incidents.filter(status=status_filter)
     
-    # Process incidents to extract smart scanner suggestions
+    # Process incidents to extract smart scanner suggestions and calculate unread comments
     processed_incidents = []
     for incident in incidents:
         incident_dict = {
             'incident': incident,
-            'smart_suggestions': []
+            'smart_suggestions': [],
+            'unread_comments_count': 0
         }
         
         # Extract smart scanner suggestions if status is Resolved
@@ -92,6 +93,18 @@ def home(request):
             elif 'Reported via Smart Scanner' not in incident.description and 'Issue resolved via Smart Scanner quick fixes.' not in incident.description:
                 # New format: Description is directly the suggestions, split by newline
                 incident_dict['smart_suggestions'] = [s.strip() for s in incident.description.split('\n') if s.strip()]
+        
+        # Calculate unread comments count
+        # Check if there are any comments
+        if incident.comments.exists():
+            try:
+                comment_read = CommentRead.objects.get(user=request.user, incident=incident)
+                # Count comments created after last read
+                unread_comments = incident.comments.filter(created_at__gt=comment_read.last_read_at)
+                incident_dict['unread_comments_count'] = unread_comments.count()
+            except CommentRead.DoesNotExist:
+                # User has never read comments, so all comments are unread
+                incident_dict['unread_comments_count'] = incident.comments.count()
         
         processed_incidents.append(incident_dict)
     
@@ -208,7 +221,7 @@ def report_incident(request):
             messages.success(request, "Ticket submitted successfully. IT will review it.")
         
         # Trigger n8n Webhook
-        n8n_url = "http://localhost:5678/webhook-test/new-incident"
+        n8n_url = "http://localhost:5678/webhook/new-incident"
         payload = {
             "ticket_id": incident.id,
             "title": incident.title,
@@ -308,8 +321,12 @@ def admin_dashboard(request):
         incidents = get_period_queryset(incidents)
 
     # Status filtering
+    # If filtering by "Open", include both "Open" and "In Progress" statuses
     if status_filter:
-        incidents = incidents.filter(status=status_filter)
+        if status_filter == 'Open':
+            incidents = incidents.filter(status__in=['Open', 'In Progress'])
+        else:
+            incidents = incidents.filter(status=status_filter)
     
     # User filtering (only if not viewing specific user)
     if user_filter and not view_user:
@@ -396,12 +413,34 @@ def admin_dashboard(request):
     if view_serial:
         view_serial_display = view_serial
     
+    # Calculate status counts - include "In Progress" in "Open" count
+    open_count = status_bar_base.filter(status__in=['Open', 'In Progress']).count()
+    resolved_count = status_bar_base.filter(status='Resolved').count()
+    closed_count = status_bar_base.filter(status='Closed').count()
+    open_year_count = Incident.objects.filter(status__in=['Open', 'In Progress'], created_at__year=datetime.now().year).count()
+    
+    # Calculate unread comments for each incident (for IT staff)
+    incidents_with_unread = []
+    for incident in incidents:
+        unread_count = 0
+        if incident.comments.exists():
+            try:
+                comment_read = CommentRead.objects.get(user=request.user, incident=incident)
+                unread_count = incident.comments.filter(created_at__gt=comment_read.last_read_at).count()
+            except CommentRead.DoesNotExist:
+                unread_count = incident.comments.count()
+        incidents_with_unread.append({
+            'incident': incident,
+            'unread_comments_count': unread_count
+        })
+    
     context = {
         'incidents': incidents,
-        'open_count': status_bar_base.filter(status='Open').count(),
-        'resolved_count': status_bar_base.filter(status='Resolved').count(),
-        'closed_count': status_bar_base.filter(status='Closed').count(),
-        'open_year_count': Incident.objects.filter(status='Open', created_at__year=datetime.now().year).count(),
+        'incidents_with_unread': incidents_with_unread,  # For template to show notifications
+        'open_count': open_count,
+        'resolved_count': resolved_count,
+        'closed_count': closed_count,
+        'open_year_count': open_year_count,
         'all_count': status_bar_base.count(),
         'period_filter': period_filter,  # Pass period to template
         'from_date_display': from_date_display,  # Formatted date for display
@@ -421,26 +460,62 @@ def manage_ticket(request, ticket_id):
     if not request.user.is_staff:
         return redirect('home')
         
-    ticket = Incident.objects.get(id=ticket_id)
+    ticket = Incident.objects.prefetch_related('comments').get(id=ticket_id)
+    
+    # Mark comments as read when viewing the ticket
+    CommentRead.objects.update_or_create(
+        user=request.user,
+        incident=ticket,
+        defaults={'last_read_at': timezone.now()}
+    )
     
     if request.method == 'POST':
-        # Only allow updating status and admin notes
-        # Edit and delete are only allowed in Django admin
-        new_status = request.POST.get('status')
-        admin_response = request.POST.get('admin_notes', '').strip()
-        
-        ticket.status = new_status
-        if admin_response:
-            ticket.admin_response = admin_response
-        # Track which admin resolved the ticket and when
-        if new_status == 'Closed':
+        # Check if this is a status update (not a comment or acknowledgment)
+        # Status update form has 'status' field and optionally 'update_status' button, 
+        # comment form has 'message' field, acknowledge form goes to different URL
+        if ('status' in request.POST or 'update_status' in request.POST) and 'message' not in request.POST:
+            # Prevent updates to closed tickets
+            if ticket.status == 'Closed':
+                messages.error(request, "Cannot update a closed ticket.")
+                return render(request, 'manage_ticket.html', {'ticket': ticket})
+            
+            # Only allow updating status and admin notes
+            # Edit and delete are only allowed in Django admin
+            new_status = request.POST.get('status', '').strip()
+            admin_response = request.POST.get('admin_notes', '').strip()
+            
+            # Validate status
+            valid_statuses = ['Open', 'In Progress', 'Resolved', 'Closed']
+            if not new_status or new_status not in valid_statuses:
+                messages.error(request, f"Invalid status: {new_status}")
+                return render(request, 'manage_ticket.html', {'ticket': ticket})
+            
+            # Update ticket status
+            old_status = ticket.status
+            ticket.status = new_status
+            
+            # Update admin response if provided
             if admin_response:
+                ticket.admin_response = admin_response
+            
+            # Track which admin resolved the ticket and when
+            if new_status == 'Closed':
                 ticket.resolved_by = request.user
-            if not ticket.resolved_at:
-                ticket.resolved_at = timezone.now()
-        ticket.save()
-        messages.success(request, f"Ticket #{ticket.id} updated successfully.")
-        return redirect('admin_dashboard')
+                if not ticket.resolved_at:
+                    ticket.resolved_at = timezone.now()
+            elif new_status == 'Resolved':
+                # If changing to Resolved, set resolved_at if not already set
+                if not ticket.resolved_at:
+                    ticket.resolved_at = timezone.now()
+            
+            # Save the ticket
+            try:
+                ticket.save()
+                messages.success(request, f"Ticket #{ticket.id} status updated from '{old_status}' to '{new_status}' successfully.")
+                return redirect('admin_dashboard')
+            except Exception as e:
+                messages.error(request, f"Error updating ticket: {str(e)}")
+                return render(request, 'manage_ticket.html', {'ticket': ticket})
 
     return render(request, 'manage_ticket.html', {'ticket': ticket})
 
@@ -660,6 +735,250 @@ def n8n_webhook_new_incident(request):
             'title': incident.title,
             'status': incident.status
         }, status=201)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON payload'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def telegram_acknowledge(request, ticket_id):
+    """
+    Webhook endpoint for Telegram acknowledge button callback.
+    Updates the incident to mark it as acknowledged by IT.
+    """
+    try:
+        # Parse JSON data from Telegram callback
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+        
+        # Get the incident
+        try:
+            incident = Incident.objects.get(id=ticket_id)
+        except Incident.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Incident not found'
+            }, status=404)
+        
+        # Get IT user from callback data or use a default
+        # In a real scenario, you'd identify the IT user from Telegram user ID
+        it_user = None
+        if 'telegram_user_id' in data:
+            # You can map Telegram user IDs to Django users if needed
+            # For now, we'll use the first staff user or create a system user
+            it_user = User.objects.filter(is_staff=True).first()
+        
+        if not it_user:
+            # Use first staff user or create system user
+            it_user = User.objects.filter(is_staff=True).first()
+            if not it_user:
+                it_user, _ = User.objects.get_or_create(
+                    username='it_system',
+                    defaults={'email': 'it@example.com', 'is_staff': True}
+                )
+        
+        # Update incident acknowledgment
+        incident.it_acknowledged = True
+        incident.it_acknowledged_at = timezone.now()
+        incident.it_acknowledged_by = it_user
+        # Change status to In Progress when acknowledged
+        if incident.status == 'Open':
+            incident.status = 'In Progress'
+        incident.save()
+        
+        # Return success response
+        return JsonResponse({
+            'success': True,
+            'message': f'Ticket #{ticket_id} acknowledged by IT',
+            'ticket_id': ticket_id,
+            'acknowledged_by': it_user.username,
+            'acknowledged_at': incident.it_acknowledged_at.isoformat()
+        }, status=200)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON payload'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+@login_required
+def acknowledge_ticket(request, ticket_id):
+    """
+    Allow IT staff to acknowledge a ticket from the webapp.
+    """
+    if not request.user.is_staff:
+        messages.error(request, "Only IT staff can acknowledge tickets.")
+        return redirect('home')
+    
+    try:
+        ticket = Incident.objects.get(id=ticket_id)
+    except Incident.DoesNotExist:
+        messages.error(request, "Ticket not found.")
+        return redirect('admin_dashboard')
+    
+    # Update incident acknowledgment
+    ticket.it_acknowledged = True
+    ticket.it_acknowledged_at = timezone.now()
+    ticket.it_acknowledged_by = request.user
+    # Change status to In Progress when acknowledged
+    if ticket.status == 'Open':
+        ticket.status = 'In Progress'
+    ticket.save()
+    
+    messages.success(request, f"Ticket #{ticket_id} acknowledged successfully.")
+    return redirect('manage_ticket', ticket_id=ticket_id)
+
+@login_required
+def add_comment(request, ticket_id):
+    """
+    Allow all users to add comments to tickets.
+    """
+    try:
+        ticket = Incident.objects.get(id=ticket_id)
+    except Incident.DoesNotExist:
+        messages.error(request, "Ticket not found.")
+        if request.user.is_staff:
+            return redirect('admin_dashboard')
+        return redirect('home')
+    
+    # Check if user has permission to comment on this ticket
+    # Users can comment on their own tickets, IT staff can comment on any ticket
+    if not request.user.is_staff and ticket.user != request.user:
+        messages.error(request, "You can only comment on your own tickets.")
+        return redirect('home')
+    
+    if request.method == 'POST':
+        message = request.POST.get('message', '').strip()
+        if not message:
+            messages.error(request, "Comment cannot be empty.")
+        else:
+            # Create the comment
+            comment = Comment.objects.create(
+                incident=ticket,
+                user=request.user,
+                message=message
+            )
+            # Mark comments as read for the user who posted (they just saw their own comment)
+            CommentRead.objects.update_or_create(
+                user=request.user,
+                incident=ticket,
+                defaults={'last_read_at': timezone.now()}
+            )
+            messages.success(request, "Comment added successfully. You can leave another comment if needed.")
+    
+    # Redirect back to the appropriate page
+    if request.user.is_staff:
+        return redirect('manage_ticket', ticket_id=ticket_id)
+    else:
+        return redirect('home')
+
+@login_required
+def mark_comments_read(request, ticket_id):
+    """
+    Mark comments as read for a specific ticket.
+    Called when user views the ticket modal/details.
+    """
+    try:
+        ticket = Incident.objects.get(id=ticket_id)
+    except Incident.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Ticket not found'}, status=404)
+    
+    # Check if user has permission to view this ticket
+    if not request.user.is_staff and ticket.user != request.user:
+        return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
+    
+    # Mark comments as read
+    CommentRead.objects.update_or_create(
+        user=request.user,
+        incident=ticket,
+        defaults={'last_read_at': timezone.now()}
+    )
+    
+    return JsonResponse({'success': True})
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def telegram_leave_message(request, ticket_id):
+    """
+    Webhook endpoint for Telegram leave message button callback.
+    Allows IT to leave a status message (e.g., waiting for parts, cannot finish, etc.).
+    """
+    try:
+        # Parse JSON data from Telegram callback
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST.dict()
+        
+        # Get the incident
+        try:
+            incident = Incident.objects.get(id=ticket_id)
+        except Incident.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Incident not found'
+            }, status=404)
+        
+        # Get message from callback data
+        message = data.get('message', '').strip()
+        if not message:
+            return JsonResponse({
+                'success': False,
+                'error': 'Message is required'
+            }, status=400)
+        
+        # Get IT user from callback data or use a default
+        it_user = None
+        if 'telegram_user_id' in data:
+            it_user = User.objects.filter(is_staff=True).first()
+        
+        if not it_user:
+            it_user = User.objects.filter(is_staff=True).first()
+            if not it_user:
+                it_user, _ = User.objects.get_or_create(
+                    username='it_system',
+                    defaults={'email': 'it@example.com', 'is_staff': True}
+                )
+        
+        # Update incident with message
+        # Append to existing message if there is one
+        if incident.it_status_message:
+            incident.it_status_message = f"{incident.it_status_message}\n\n[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {it_user.username}: {message}"
+        else:
+            incident.it_status_message = f"[{timezone.now().strftime('%d/%m/%Y %H:%M')}] {it_user.username}: {message}"
+        
+        # Mark as acknowledged if not already
+        if not incident.it_acknowledged:
+            incident.it_acknowledged = True
+            incident.it_acknowledged_at = timezone.now()
+            incident.it_acknowledged_by = it_user
+            if incident.status == 'Open':
+                incident.status = 'In Progress'
+        
+        incident.save()
+        
+        # Return success response
+        return JsonResponse({
+            'success': True,
+            'message': f'Status message added to ticket #{ticket_id}',
+            'ticket_id': ticket_id,
+            'status_message': incident.it_status_message
+        }, status=200)
         
     except json.JSONDecodeError:
         return JsonResponse({

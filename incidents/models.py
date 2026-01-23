@@ -68,6 +68,12 @@ class Incident(models.Model):
     # ✅ ADMIN RESPONSE FIELD (This fixes your error!)
     admin_response = models.TextField(blank=True, null=True)
     resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='resolved_incidents')
+    
+    # IT Acknowledgment Fields
+    it_acknowledged = models.BooleanField(default=False)
+    it_acknowledged_at = models.DateTimeField(null=True, blank=True)
+    it_acknowledged_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='acknowledged_incidents')
+    it_status_message = models.TextField(blank=True, null=True, help_text="IT status message (e.g., waiting for parts, cannot finish, etc.)")
 
     def __str__(self):
         return f"{self.title} - {self.status}"
@@ -79,3 +85,31 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s Profile"
+
+# 3. COMMENT MODEL - For all users to leave comments on incidents
+class Comment(models.Model):
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, related_name='comments')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['created_at']  # Earliest comments at top, latest at bottom
+    
+    def __str__(self):
+        return f"Comment by {self.user.username} on Ticket #{self.incident.id}"
+
+# 4. COMMENT READ TRACKING - Track when users last viewed comments for each incident
+class CommentRead(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    incident = models.ForeignKey(Incident, on_delete=models.CASCADE, related_name='comment_reads')
+    last_read_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['user', 'incident']
+        indexes = [
+            models.Index(fields=['user', 'incident']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} last read comments for Ticket #{self.incident.id} at {self.last_read_at}"
