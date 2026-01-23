@@ -149,7 +149,39 @@ class UserAdmin(BaseUserAdmin):
     # Label the column header nicely
     get_laptop_model.short_description = 'Laptop Model'
 
-# 5. Define custom Incident Admin
+# 5. Define Inline Admins for Comments and CommentRead
+class CommentInline(admin.TabularInline):
+    model = Comment
+    extra = 0
+    readonly_fields = ('created_at',)
+    fields = ('user', 'message', 'created_at')
+    verbose_name = 'Comment'
+    verbose_name_plural = 'Comments'
+    can_delete = True
+    ordering = ('created_at',)  # Earliest first
+    
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        # Make the message field smaller and more compact
+        formset.form.base_fields['message'].widget.attrs.update({
+            'rows': 2,
+            'cols': 30,
+            'style': 'width: 100%; max-width: 300px; height: 50px; resize: vertical; font-size: 12px;'
+        })
+        return formset
+
+class CommentReadInline(admin.TabularInline):
+    model = CommentRead
+    extra = 0
+    readonly_fields = ('user', 'last_read_at')
+    fields = ('user', 'last_read_at')
+    verbose_name = 'Comment Read'
+    verbose_name_plural = 'Comment Read Status'
+    can_delete = False  # Don't allow deleting (they're auto-managed)
+    can_add = False  # Don't allow adding (they're auto-created)
+    max_num = 0  # Don't show add button
+
+# 6. Define custom Incident Admin
 class IncidentAdmin(admin.ModelAdmin):
     list_display = (
         'id', 
@@ -172,6 +204,8 @@ class IncidentAdmin(admin.ModelAdmin):
         'status'
     )
     readonly_fields = ('created_at', 'resolved_at', 'resolved_by')
+    # Add inlines for Comments and CommentRead
+    inlines = [CommentInline, CommentReadInline]
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         extra_context = extra_context or {}
@@ -265,10 +299,10 @@ class IncidentAdmin(admin.ModelAdmin):
     get_status_display.short_description = 'Status'
     get_status_display.admin_order_field = 'status'
 
-# 6. Define Comment Admin
+# 7. Define Comment Admin (standalone - hidden from admin interface)
 class CommentAdmin(admin.ModelAdmin):
     list_display = ('id', 'incident', 'user', 'created_at', 'message_preview')
-    list_filter = ('created_at', 'user')
+    list_filter = ('created_at', 'user', 'incident')
     search_fields = ('message', 'user__username', 'incident__title', 'incident__id')
     readonly_fields = ('created_at',)
     
@@ -278,16 +312,25 @@ class CommentAdmin(admin.ModelAdmin):
             return obj.message[:50] + '...'
         return obj.message
     message_preview.short_description = 'Message Preview'
+    
+    def get_model_perms(self, request):
+        # Hide from admin index but still allow direct access if needed
+        return {}
 
-# 7. Define CommentRead Admin
+# 8. Define CommentRead Admin (standalone - hidden from admin interface)
 class CommentReadAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'incident', 'last_read_at')
-    list_filter = ('last_read_at', 'user')
+    list_filter = ('last_read_at', 'user', 'incident')
     search_fields = ('user__username', 'incident__title', 'incident__id')
     readonly_fields = ('last_read_at',)
+    
+    def get_model_perms(self, request):
+        # Hide from admin index but still allow direct access if needed
+        return {}
 
 admin.site.unregister(User)
 admin.site.register(User, UserAdmin)
 admin.site.register(Incident, IncidentAdmin)
+# Register but hide from sidebar - they're accessible via Incident inline only
 admin.site.register(Comment, CommentAdmin)
 admin.site.register(CommentRead, CommentReadAdmin)
