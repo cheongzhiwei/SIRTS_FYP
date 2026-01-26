@@ -912,119 +912,52 @@ def mark_comments_read(request, ticket_id):
     
     return JsonResponse({'success': True})
 
-@login_required
+@csrf_exempt
 @require_http_methods(["POST"])
 def update_ticket_response(request):
     """
-    API endpoint to update ticket status and admin response.
-    Accepts POST requests with JSON payload containing ticket_id, status, and/or admin_response.
+    Improved API endpoint with error handling for n8n.
     """
     try:
-        # Parse JSON data
-        if request.content_type == 'application/json':
-            data = json.loads(request.body)
-        else:
-            data = request.POST.dict()
-        
-        ticket_id = data.get('ticket_id')
-        if not ticket_id:
-            return JsonResponse({
-                'success': False,
-                'error': 'ticket_id is required'
-            }, status=400)
-        
-        # Get the ticket
-        try:
-            ticket = Incident.objects.get(id=ticket_id)
-        except Incident.DoesNotExist:
-            return JsonResponse({
-                'success': False,
-                'error': 'Ticket not found'
-            }, status=404)
-        
-        # Check permissions - staff can update any ticket, users can only update their own
-        if not request.user.is_staff and ticket.user != request.user:
-            return JsonResponse({
-                'success': False,
-                'error': 'Permission denied'
-            }, status=403)
-        
-        # Prevent updates to closed tickets
-        if ticket.status == 'Closed':
-            return JsonResponse({
-                'success': False,
-                'error': 'Cannot update a closed ticket'
-            }, status=400)
-        
-        # Get update fields
-        new_status = data.get('status', '').strip()
-        admin_response = data.get('admin_response', '').strip()
-        
-        # Track old status for response
-        old_status = ticket.status
-        updated_fields = []
-        
-        # Update status if provided
-        if new_status:
-            valid_statuses = ['Open', 'In Progress', 'Resolved', 'Closed']
-            if new_status not in valid_statuses:
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Invalid status: {new_status}. Valid statuses are: {", ".join(valid_statuses)}'
-                }, status=400)
-            
-            ticket.status = new_status
-            updated_fields.append('status')
-            
-            # Track which admin resolved the ticket and when
-            if new_status == 'Closed':
-                ticket.resolved_by = request.user
-                if not ticket.resolved_at:
-                    ticket.resolved_at = timezone.now()
-                updated_fields.append('resolved_by')
-                updated_fields.append('resolved_at')
-            elif new_status == 'Resolved':
-                # If changing to Resolved, set resolved_at if not already set
-                if not ticket.resolved_at:
-                    ticket.resolved_at = timezone.now()
-                    updated_fields.append('resolved_at')
-        
-        # Update admin response if provided
-        if admin_response is not None:  # Allow empty string to clear the response
-            ticket.admin_response = admin_response
-            updated_fields.append('admin_response')
-        
-        # Save the ticket if any fields were updated
-        if updated_fields:
-            try:
-                ticket.save()
-                return JsonResponse({
-                    'success': True,
-                    'message': f'Ticket #{ticket_id} updated successfully',
-                    'ticket_id': ticket_id,
-                    'updated_fields': updated_fields,
-                    'old_status': old_status,
-                    'new_status': ticket.status
-                }, status=200)
-            except Exception as e:
-                return JsonResponse({
-                    'success': False,
-                    'error': f'Error updating ticket: {str(e)}'
-                }, status=500)
-        else:
-            return JsonResponse({
-                'success': False,
-                'error': 'No fields to update. Provide status and/or admin_response'
-            }, status=400)
-            
+        # 1. Safely parse JSON body
+        data = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({
-            'success': False,
+            'success': False, 
             'error': 'Invalid JSON payload'
         }, status=400)
+
+    # 2. Validate required keys
+    ticket_id = data.get('ticket_id')
+    if not ticket_id:
+        return JsonResponse({
+            'success': False, 
+            'error': 'Missing ticket_id'
+        }, status=400)
+
+    try:
+        # 3. Use your Incident model to find the ticket
+        incident = Incident.objects.get(id=ticket_id)
+        
+        # Update fields based on your repository models
+        incident.it_acknowledged = True
+        incident.it_acknowledged_at = timezone.now()
+        incident.status = 'In Progress'
+        incident.save()
+        
+        return JsonResponse({
+            'success': True, 
+            'message': f'Ticket #{ticket_id} updated successfully'
+        })
+        
+    except Incident.DoesNotExist:
+        return JsonResponse({
+            'success': False, 
+            'error': f'Incident #{ticket_id} not found'
+        }, status=404)
     except Exception as e:
         return JsonResponse({
-            'success': False,
+            'success': False, 
             'error': str(e)
         }, status=500)
 
@@ -1109,25 +1042,65 @@ def telegram_leave_message(request, ticket_id):
         }, status=500)
 
 @csrf_exempt
+@require_http_methods(["POST"])
 def update_incident_from_n8n(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            ticket_id = data.get('ticket_id')
-            
-            # Use the Incident model you just imported!
-            incident = Incident.objects.get(id=ticket_id)
-            
-            # Update the fields based on your models.py
-            incident.it_acknowledged = True
-            incident.it_acknowledged_at = timezone.now()
-            incident.status = 'In Progress'
-            incident.it_status_message = "Acknowledged via Telegram"
-            incident.save()
-            
-            return JsonResponse({'status': 'success', 'message': f'Ticket {ticket_id} updated'})
-        except Incident.DoesNotExist:
-            return JsonResponse({'status': 'error', 'message': 'Incident not found'}, status=404)
-        except Exception as e:
-            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-    return JsonResponse({'status': 'error', 'message': 'Invalid request'}, status=400)
+    """
+    API endpoint for n8n to update ticket acknowledgment.
+    Expects JSON payload: {"ticket_id": <number>, "response": "Acknowledged"}
+    """
+    try:
+        # Parse JSON body
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error', 
+            'message': 'Invalid JSON payload'
+        }, status=400)
+    
+    # Validate ticket_id
+    ticket_id = data.get('ticket_id')
+    if not ticket_id:
+        return JsonResponse({
+            'status': 'error', 
+            'message': "Field 'ticket_id' is required"
+        }, status=400)
+    
+    # Convert to integer if it's a string
+    try:
+        if isinstance(ticket_id, str):
+            ticket_id = int(ticket_id.strip())
+        elif not isinstance(ticket_id, int):
+            ticket_id = int(ticket_id)
+    except (ValueError, TypeError):
+        return JsonResponse({
+            'status': 'error', 
+            'message': f"Field 'ticket_id' must be a number, got: {type(ticket_id).__name__}"
+        }, status=400)
+    
+    # Get the incident
+    try:
+        incident = Incident.objects.get(id=ticket_id)
+    except Incident.DoesNotExist:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Incident #{ticket_id} not found'
+        }, status=404)
+    
+    # Update the fields
+    incident.it_acknowledged = True
+    incident.it_acknowledged_at = timezone.now()
+    if incident.status == 'Open':
+        incident.status = 'In Progress'
+    
+    # Get response message if provided
+    response_message = data.get('response', 'Acknowledged via Telegram')
+    if response_message:
+        incident.it_status_message = response_message
+    
+    incident.save()
+    
+    return JsonResponse({
+        'status': 'success', 
+        'message': f'Ticket #{ticket_id} updated successfully',
+        'ticket_id': ticket_id
+    })
