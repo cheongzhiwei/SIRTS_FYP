@@ -6,6 +6,8 @@ urlpatterns = [
     # Main user pages
     path('', views.home, name='home'), # ✅ This name must be 'home'
     path('report/', views.report_incident, name='report_incident'),
+    path('api/update-ticket/', views.update_ticket_response, name='update_ticket'),
+    
     
     # Admin pages
     path('dashboard/', views.admin_dashboard, name='admin_dashboard'),

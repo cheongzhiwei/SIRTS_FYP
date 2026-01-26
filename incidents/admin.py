@@ -179,7 +179,7 @@ class CommentReadInline(admin.TabularInline):
     verbose_name_plural = 'Comment Read Status'
     can_delete = False  # Don't allow deleting (they're auto-managed)
     can_add = False  # Don't allow adding (they're auto-created)
-    max_num = 0  # Don't show add button
+    # Note: Don't set max_num = 0 as it prevents existing records from displaying
 
 # 6. Define custom Incident Admin
 class IncidentAdmin(admin.ModelAdmin):
@@ -193,15 +193,17 @@ class IncidentAdmin(admin.ModelAdmin):
         'status', 
         'created_at'
     )
-    # Add 'user' to list_filter to get a clickable sidebar filter
-    list_filter = ('user', 'status', 'laptop_model',DateRangeFilter) 
     # Ensure 'user__username' is in search_fields so you can type the name in the search box
     search_fields = ('id', 'title', 'user__username', 'reporter_name', 'description', 'laptop_model', 'laptop_serial', 'department')
     # This makes the user selection a searchable dropdown instead of a long list
     autocomplete_fields = ['user']
+    # Combined list_filter with all filters: user, status, laptop_model, and date filters
     list_filter = (
-        ('created_at', DateFieldListFilter), 
-        'status'
+        ('created_at', DateFieldListFilter),
+        'user',
+        'status',
+        'laptop_model',
+        DateRangeFilter
     )
     readonly_fields = ('created_at', 'resolved_at', 'resolved_by')
     # Add inlines for Comments and CommentRead
