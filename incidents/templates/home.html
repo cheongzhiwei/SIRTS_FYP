@@ -232,6 +232,22 @@
                                                 <p class="mb-0">{{ incident.description|default:"No description provided"|linebreaks }}</p>
                                             </div>
                                         </div>
+                                        {% if incident.attachment %}
+                                        <div class="mb-3">
+                                            <strong>Attachment:</strong>
+                                            <div class="mt-2">
+                                                <a href="{{ incident.attachment.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                                    <i class="fas fa-download"></i> Download File
+                                                </a>
+                                                <small class="text-muted ms-2">{{ incident.attachment.name|slice:"20:" }}</small>
+                                            </div>
+                                            {% if incident.file_hash %}
+                                            <div class="mt-2">
+                                                <small><strong>File Hash:</strong> <code class="small">{{ incident.file_hash }}</code></small>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
                                         <div class="row mb-3">
                                             <div class="col-md-6">
                                                 <strong>Date Reported:</strong>

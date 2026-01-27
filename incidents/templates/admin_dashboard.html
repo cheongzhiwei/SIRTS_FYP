@@ -228,7 +228,14 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                                 <small class="text-muted">Serial: -</small>
                             {% endif %}
                         </td>
-                        <td>{{ incident.title }}</td>
+                        <td>
+                            {{ incident.title }}
+                            {% if incident.attachment %}
+                            <a href="{{ incident.attachment.url }}" target="_blank" class="ms-2 text-decoration-none" title="Download attachment">
+                                <i class="fas fa-paperclip text-primary"></i>
+                            </a>
+                            {% endif %}
+                        </td>
                         <td>{{ incident.created_at|date:"d/m/Y" }}</td>
                         <td>
                             {% if incident.status == 'Open' %}

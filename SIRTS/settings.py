@@ -127,5 +127,9 @@ SHORT_DATETIME_FORMAT = 'd/m/Y H:i'
 
 STATIC_URL = 'static/'
 
+# Media files (User uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'report_incident'

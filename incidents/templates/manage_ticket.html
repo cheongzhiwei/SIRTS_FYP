@@ -20,6 +20,22 @@
                         <p><strong>Date:</strong> {{ ticket.created_at|date:"M d, Y H:i" }}</p>
                         <p><strong>Issue Title:</strong> {{ ticket.title }}</p>
                         <p><strong>Issue Description:</strong> <span class="text-muted">{{ ticket.description }}</span></p>
+                        {% if ticket.attachment %}
+                        <p><strong>Attachment:</strong> 
+                            <a href="{{ ticket.attachment.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-download"></i> Download File
+                            </a>
+                            <small class="text-muted ms-2">({{ ticket.attachment.name|slice:"20:" }})</small>
+                        </p>
+                        {% if ticket.file_hash %}
+                        <p><strong>File Hash (SHA256):</strong> 
+                            <code class="small">{{ ticket.file_hash }}</code>
+                            <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyHash('{{ ticket.file_hash }}')" title="Copy hash">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </p>
+                        {% endif %}
+                        {% endif %}
                         {% if ticket.resolved_by %}
                         <p><strong>Resolved by:</strong> {{ ticket.resolved_by.username }}</p>
                         {% endif %}
@@ -137,5 +153,12 @@
     </div>
 </div>
 
+<script>
+function copyHash(hash) {
+    navigator.clipboard.writeText(hash).then(function() {
+        alert('Hash copied to clipboard!');
+    });
+}
+</script>
 </body>
 </html>

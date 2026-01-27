@@ -8,7 +8,7 @@
                 <h4 class="mb-0 text-center">New Incident Report</h4>
             </div>
             <div class="card-body p-4">
-                <form id="incidentForm" method="POST">
+                <form id="incidentForm" method="POST" enctype="multipart/form-data">
                     {% csrf_token %}
 
                     <div class="mb-4">
@@ -24,6 +24,16 @@
                         <label class="form-label fw-bold">Issue Description (Optional)</label>
                         <textarea name="description" class="form-control" rows="3" 
                                   placeholder="Provide more details about the issue (optional)..."></textarea>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">File Attachment (Optional)</label>
+                        <input type="file" name="attachment" class="form-control" 
+                               accept="*/*" 
+                               id="fileAttachment">
+                        <div class="form-text mt-2">
+                            Attach a file related to your issue. The file will be scanned for viruses automatically.
+                        </div>
                     </div>
 
                     <div id="solutionHub" class="card bg-light border-warning mb-4 d-none">

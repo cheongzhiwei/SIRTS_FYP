@@ -13,6 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 import json
 import requests
+import hashlib
 
 
 @login_required
@@ -192,15 +193,40 @@ def report_incident(request):
         elif not description:
             description = "Reported via Smart Scanner"
 
-        # 1. Create the incident object but don't save to DB yet
+        # 1. Handle file upload and generate SHA256 hash for VirusTotal
+        file_hash = ""
+        attachment_file = None
+        
+        if 'attachment' in request.FILES:
+            file_obj = request.FILES['attachment']
+            
+            # Generate SHA256 hash for VirusTotal scanning
+            # Read file content into memory for hashing (Django will handle saving)
+            file_content = b''
+            sha256_hash = hashlib.sha256()
+            
+            # Read file in chunks to handle large files safely
+            for chunk in file_obj.chunks():
+                sha256_hash.update(chunk)
+                file_content += chunk
+            
+            file_hash = sha256_hash.hexdigest()
+            
+            # Create a new file-like object from the content for Django to save
+            from django.core.files.base import ContentFile
+            attachment_file = ContentFile(file_content, name=file_obj.name)
+        
+        # 2. Create the incident object but don't save to DB yet
         incident = Incident(
             user=request.user,
             title=title,
             description=description,
-            status=status_value
+            status=status_value,
+            attachment=attachment_file,
+            file_hash=file_hash
         )
         
-        # 2. THE STRENGTHENING STEP: Auto-pull profile data
+        # 3. THE STRENGTHENING STEP: Auto-pull profile data
         # We look up the EmployeeProfile to "lock" the hardware info into the ticket
         profile = getattr(request.user, 'employeeprofile', None)
         if profile:
@@ -208,7 +234,7 @@ def report_incident(request):
             incident.laptop_serial = profile.laptop_serial # Snapshot serial number
             incident.department = profile.get_department_display()
             
-        # 3. Save the incident with the "Snapshot" locked in
+        # 4. Save the incident with the "Snapshot" locked in
         incident.save()
         
         # If self-fixed, set resolved_at to created_at (same date)
@@ -221,14 +247,16 @@ def report_incident(request):
         else:
             messages.success(request, "Ticket submitted successfully. IT will review it.")
         
-        # Trigger n8n Webhook
+        # 5. Trigger n8n Webhook with file_hash and file_url for VirusTotal scanning
         n8n_url = "https://backmost-blowiest-arnold.ngrok-free.dev/webhook-test/new-incident"
         payload = {
             "ticket_id": incident.id,
             "title": incident.title,
             "department": incident.department,
             "laptop_serial": incident.laptop_serial,  # Uses your hardware snapshot
-            "reported_by": request.user.username
+            "reported_by": request.user.username,
+            "file_hash": file_hash if file_hash else "",  # Include file hash for VirusTotal
+            "file_url": request.build_absolute_uri(incident.attachment.url) if incident.attachment else ""  # File URL for n8n to download and upload to VirusTotal
         }
         
         try:
@@ -1091,11 +1119,6 @@ def update_incident_from_n8n(request):
     incident.it_acknowledged_at = timezone.now()
     if incident.status == 'Open':
         incident.status = 'In Progress'
-    
-    # Get response message if provided
-    response_message = data.get('response', 'Acknowledged via Telegram')
-    if response_message:
-        incident.it_status_message = response_message
     
     incident.save()
     
