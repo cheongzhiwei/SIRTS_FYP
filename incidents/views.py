@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 from django.contrib import messages
+from django.contrib.sessions.models import Session
 from .models import Incident, EmployeeProfile, Comment, CommentRead
 from datetime import datetime, timedelta, date
 from django.utils import timezone
@@ -248,7 +249,29 @@ def report_incident(request):
             messages.success(request, "Ticket submitted successfully. IT will review it.")
         
         # 5. Trigger n8n Webhook with file_hash and file_url for VirusTotal scanning
-        n8n_url = "https://backmost-blowiest-arnold.ngrok-free.dev/webhook-test/new-incident"
+        from django.conf import settings
+        n8n_url = f"{settings.EXTERNAL_BASE_URL}/webhook-test/new-incident"
+        
+        # Build file URL that n8n can access (use EXTERNAL_BASE_URL if available, otherwise use request host)
+        file_url = ""
+        if incident.attachment:
+            try:
+                # Use EXTERNAL_BASE_URL from settings so n8n can access the file
+                if hasattr(settings, 'EXTERNAL_BASE_URL') and settings.EXTERNAL_BASE_URL:
+                    base_url = settings.EXTERNAL_BASE_URL.rstrip('/')
+                    attachment_path = incident.attachment.url.lstrip('/')
+                    file_url = f"{base_url}/{attachment_path}"
+                else:
+                    # Fallback to request-based URL
+                    file_url = request.build_absolute_uri(incident.attachment.url)
+            except Exception as e:
+                # Fallback to request-based URL if external URL fails
+                print(f"Error building file URL: {e}")
+                try:
+                    file_url = request.build_absolute_uri(incident.attachment.url)
+                except:
+                    file_url = ""
+        
         payload = {
             "ticket_id": incident.id,
             "title": incident.title,
@@ -256,7 +279,7 @@ def report_incident(request):
             "laptop_serial": incident.laptop_serial,  # Uses your hardware snapshot
             "reported_by": request.user.username,
             "file_hash": file_hash if file_hash else "",  # Include file hash for VirusTotal
-            "file_url": request.build_absolute_uri(incident.attachment.url) if incident.attachment else ""  # File URL for n8n to download and upload to VirusTotal
+            "file_url": file_url  # File URL for n8n to download and upload to VirusTotal
         }
         
         try:
@@ -549,13 +572,25 @@ def manage_ticket(request, ticket_id):
     return render(request, 'manage_ticket.html', {'ticket': ticket})
 
 def user_login(request):
+    # If user is already logged in, redirect them
+    if request.user.is_authenticated:
+        if request.user.is_staff:
+            return redirect('admin_dashboard')
+        return redirect('home')
+    
     if request.method == 'POST':
         u = request.POST.get('username')
         p = request.POST.get('password')
         user = authenticate(request, username=u, password=p)
         if user is not None:
-            login(request, user)
-            return redirect('home')
+            if user.is_active:
+                login(request, user)
+                # Redirect staff users to admin dashboard, others to home
+                if user.is_staff:
+                    return redirect('admin_dashboard')
+                return redirect('home')
+            else:
+                messages.error(request, "Your account is inactive. Please contact an administrator.")
         else:
             messages.error(request, "Invalid username or password")
     return render(request, 'login.html')
@@ -762,7 +797,10 @@ def n8n_webhook_new_incident(request):
             'message': 'Incident created successfully',
             'ticket_id': incident.id,
             'title': incident.title,
-            'status': incident.status
+            'status': incident.status,
+            'reported_by_id': user.id,
+            'reported_by': user.username,
+            'user_id': user.id
         }, status=201)
         
     except json.JSONDecodeError:
@@ -1127,3 +1165,78 @@ def update_incident_from_n8n(request):
         'message': f'Ticket #{ticket_id} updated successfully',
         'ticket_id': ticket_id
     })
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def quarantine_user_api(request):
+    """
+    API endpoint for n8n to automatically quarantine a user when malware is detected.
+    Kills all active sessions and deactivates the user account.
+    Expects JSON payload: {"user_id": <number>}
+    """
+    try:
+        # Parse JSON body
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error', 
+            'message': 'Invalid JSON payload'
+        }, status=400)
+    
+    # Validate user_id
+    user_id = data.get('user_id')
+    if not user_id:
+        return JsonResponse({
+            'status': 'error', 
+            'message': "Field 'user_id' is required"
+        }, status=400)
+    
+    # Convert to integer if it's a string
+    try:
+        if isinstance(user_id, str):
+            user_id = int(user_id.strip())
+        elif not isinstance(user_id, int):
+            user_id = int(user_id)
+    except (ValueError, TypeError):
+        return JsonResponse({
+            'status': 'error', 
+            'message': f"Field 'user_id' must be a number, got: {type(user_id).__name__}"
+        }, status=400)
+    
+    # Get the user
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'User ID {user_id} does not exist'
+        }, status=404)
+    
+    # Quarantine the user: deactivate account and kill all sessions
+    try:
+        # 1. Deactivate the account
+        user.is_active = False
+        user.save()
+        
+        # 2. Clear all active sessions for this user
+        all_sessions = Session.objects.filter(expire_date__gte=timezone.now())
+        sessions_deleted = 0
+        for session in all_sessions:
+            session_data = session.get_decoded()
+            if str(user.pk) == session_data.get('_auth_user_id'):
+                session.delete()
+                sessions_deleted += 1
+        
+        return JsonResponse({
+            'status': 'success', 
+            'message': f'User ID {user_id} ({user.username}) has been quarantined successfully',
+            'user_id': user_id,
+            'username': user.username,
+            'sessions_deleted': sessions_deleted
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Error quarantining user: {str(e)}'
+        }, status=500)

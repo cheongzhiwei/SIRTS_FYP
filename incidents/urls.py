@@ -7,6 +7,7 @@ urlpatterns = [
     path('', views.home, name='home'), # ✅ This name must be 'home'
     path('report/', views.report_incident, name='report_incident'),
     path('api/update-ticket/', views.update_incident_from_n8n, name='update_ticket'),
+    path('api/quarantine-user/', views.quarantine_user_api, name='quarantine_user_api'),
     
     
     # Admin pages

@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-qej0t#pv%lm@t3mei)9pml*o20jje4jw%5hiy6kawp6$u0km8^
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'host.docker.internal']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'host.docker.internal', 'backmost-blowiest-arnold.ngrok-free.dev']
 
 
 # Application definition
@@ -130,6 +130,11 @@ STATIC_URL = 'static/'
 # Media files (User uploads)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Base URL for external access (for n8n webhooks and file downloads)
+# Set this to your ngrok URL or public URL when deploying
+# Leave empty to use request-based URLs (may not work for n8n in Docker)
+EXTERNAL_BASE_URL = 'https://backmost-blowiest-arnold.ngrok-free.dev'  # Update this when ngrok URL changes
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'report_incident'
