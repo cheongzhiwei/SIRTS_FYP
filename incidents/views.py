@@ -1252,10 +1252,25 @@ def quarantine_user_api(request):
     
     # Quarantine the user: deactivate account and kill all sessions
     try:
-        # 1. Deactivate the account
+        # 1. Deactivate the account - Use direct database update to ensure it persists
         was_active = user.is_active
-        user.is_active = False
-        user.save()
+        
+        # Direct database update - this directly unchecks "Active" in Django admin
+        User.objects.filter(pk=user_id).update(is_active=False)
+        
+        # Refresh the user object to get the updated value
+        user.refresh_from_db()
+        
+        # Verify the update worked
+        if user.is_active:
+            # If still active, something is very wrong - log it
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f'CRITICAL: User {user_id} is_active is still True after direct update!')
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Failed to deactivate user {user_id} - database update failed'
+            }, status=500)
         
         # 2. Clear all active sessions for this user
         sessions_deleted, decode_errors = _delete_user_sessions(user)
@@ -1270,7 +1285,7 @@ def quarantine_user_api(request):
             'user_id': user_id,
             'username': user.username,
             'account_was_active': was_active,
-            'account_now_active': False,
+            'account_now_active': user.is_active,  # Use actual value from DB
             'sessions_deleted': sessions_deleted,
             'expired_sessions_cleaned': expired_deleted
         }

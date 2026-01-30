@@ -64,8 +64,8 @@ class IncidentInline(admin.TabularInline):
     model = Incident
     fk_name = 'user'  # Specify which ForeignKey to use (the reporter, not resolved_by)
     verbose_name_plural = 'Cases / Incidents'
-    fields = ('id', 'get_reporter_name', 'get_date_created', 'get_date_close', 'status')
-    readonly_fields = ('id', 'get_reporter_name', 'get_date_created', 'get_date_close')
+    fields = ('id', 'get_reporter_name', 'get_user_id', 'get_date_created', 'get_date_close', 'status')
+    readonly_fields = ('id', 'get_reporter_name', 'get_user_id', 'get_date_created', 'get_date_close')
     can_delete = False
     extra = 0
     show_change_link = True
@@ -76,6 +76,13 @@ class IncidentInline(admin.TabularInline):
             return obj.reporter_name
         return obj.user.username
     get_reporter_name.short_description = 'Reporter Name'
+    
+    def get_user_id(self, obj):
+        """Get user ID"""
+        if obj.user:
+            return obj.user.id
+        return "-"
+    get_user_id.short_description = 'User ID'
     
     def get_date_created(self, obj):
         """Get date created formatted"""
@@ -102,7 +109,7 @@ class UserAdmin(BaseUserAdmin):
     inlines = [EmployeeProfileInline, IncidentInline]
     
     # 1. Define exactly which columns to show in the list view
-    list_display = ('username', 'get_department', 'get_laptop_model', 'email', 'is_staff')
+    list_display = ('id', 'username', 'get_department', 'get_laptop_model', 'email', 'is_staff', 'is_active')
 
     # 2. Add Filters and Search (Optional but recommended)
     # Only filter by is_staff to avoid issues with missing relationships
@@ -186,7 +193,7 @@ class IncidentAdmin(admin.ModelAdmin):
     list_display = (
         'id', 
         'title', 
-        'user', 
+        'get_user_with_id',  # Show user with ID
         'department', 
         'laptop_model', 
         'laptop_serial',  # The "Snapshot" serial number
@@ -205,7 +212,6 @@ class IncidentAdmin(admin.ModelAdmin):
         'laptop_model',
         DateRangeFilter
     )
-    readonly_fields = ('created_at', 'resolved_at', 'resolved_by')
     # Add inlines for Comments and CommentRead
     inlines = [CommentInline, CommentReadInline]
 
@@ -253,7 +259,7 @@ class IncidentAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Case Information', {
-            'fields': ('user', 'reporter_name', 'title', 'description', 'status')
+            'fields': ('user', 'get_user_id_display', 'reporter_name', 'title', 'description', 'status')
         }),
         ('Resolution Details', {
             'fields': ('admin_response', 'resolved_by', 'resolved_at'),
@@ -264,6 +270,15 @@ class IncidentAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    readonly_fields = ('created_at', 'resolved_at', 'resolved_by', 'get_user_id_display')
+    
+    def get_user_id_display(self, obj):
+        """Display user ID as readonly field in detail view"""
+        if obj.user:
+            return f"User ID: {obj.user.id}"
+        return "No user assigned"
+    get_user_id_display.short_description = 'User ID'
     
     def get_reporter_user(self, obj):
         """Get reporter user name"""
@@ -300,6 +315,14 @@ class IncidentAdmin(admin.ModelAdmin):
         return status_map.get(obj.status, obj.status.lower())
     get_status_display.short_description = 'Status'
     get_status_display.admin_order_field = 'status'
+    
+    def get_user_with_id(self, obj):
+        """Display user with their ID"""
+        if obj.user:
+            return f"{obj.user.username} (ID: {obj.user.id})"
+        return "-"
+    get_user_with_id.short_description = 'User'
+    get_user_with_id.admin_order_field = 'user__username'
 
 # 7. Define Comment Admin (standalone - hidden from admin interface)
 class CommentAdmin(admin.ModelAdmin):

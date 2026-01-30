@@ -1,0 +1,251 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-incident",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "36d823b2-2178-4cfa-aa39-4e80ae139daa",
+      "name": "Webhook",
+      "webhookId": "d2997ce8-f3fb-46ca-9251-4744b1b4d2a5"
+    },
+    {
+      "parameters": {
+        "chatId": "8119891894",
+        "text": "=🚨 SIRTS Alert\n\nIssue: {{ $json.body.title }}\nTicket ID: #{{ $json.body.ticket_id }}\nHardware SN: {{ $json.body.laptop_serial }}\nDepartment: {{ $json.body.department }}\nReported By: {{ $json.body.reported_by }}\n\nPlease acknowledge or leave a message:",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Acknowledge",
+                    "additionalFields": {
+                      "callback_data": "=ack_{{ $json.body.ticket_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "80026973-205c-4f30-9dda-c113d426a5f2",
+      "name": "Send a text message",
+      "webhookId": "671673f8-05dc-41c2-b6e0-85580d0ee48e",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "52e33cea-58e9-4ce2-bff5-48d9a9cf1aa4",
+      "name": "Telegram Trigger",
+      "webhookId": "ca6339e2-06d7-46f7-9029-40c5632ee7c5",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.callback_query.data }}",
+                    "rightValue": "ack_",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "id": "7c6a2fcb-30d2-442b-8116-39320c487413"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0251f23b-ca66-4df1-91b8-1bcc37513310",
+                    "leftValue": "={{ $json.callback_query.data }}",
+                    "rightValue": "msg_",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        624,
+        0
+      ],
+      "id": "37b71924-2d07-4153-bad9-2c5828cfa8d2",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/update-ticket/",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "ticket_id",
+              "value": "={{ $json.callback_query.data.replace('ack_', '') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        896,
+        -64
+      ],
+      "id": "3da1158e-f7ae-4c97-81ad-cc1e30459fac",
+      "name": "HTTP Request1",
+      "onError": "continueRegularOutput",
+      "notes": "❌ Error: Incident not found or server is down."
+    },
+    {
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $json.body.file_hash }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        256,
+        176
+      ],
+      "id": "1b3f241e-88c1-4266-944a-96980ad62464",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ct2touOHW3FslsDR",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "db676cd9-5287-411b-b51e-356d437cf3d0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0d5c80395c175ca00fd50bec535bbb718a0d3f37988231f2fb393fbedcddc610"
+  },
+  "id": "mVPH7VHcZ8PZYxvNwfVQd",
+  "tags": []
+}

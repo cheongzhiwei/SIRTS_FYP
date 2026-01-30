@@ -1,0 +1,567 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-incident",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1328,
+        144
+      ],
+      "id": "baf2c888-3596-4937-8537-258f5e11446c",
+      "name": "Webhook",
+      "webhookId": "d2997ce8-f3fb-46ca-9251-4744b1b4d2a5"
+    },
+    {
+      "parameters": {
+        "chatId": "8119891894",
+        "text": "=🚨 SIRTS Alert\n\nIssue: {{ $json.body.title }}\nTicket ID: #{{ $json.body.ticket_id }}\nHardware SN: {{ $json.body.laptop_serial }}\nDepartment: {{ $json.body.department }}\nReported By: {{ $json.body.reported_by }}\nUser ID: {{ $json.body.reported_by_id }}\n\nPlease acknowledge ",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Acknowledge",
+                    "additionalFields": {
+                      "callback_data": "=ack_{{ $json.body.ticket_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -976,
+        96
+      ],
+      "id": "ecd6140c-4f5d-4bcd-bddc-a923d2dd52f0",
+      "name": "Send a text message",
+      "webhookId": "671673f8-05dc-41c2-b6e0-85580d0ee48e",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -512,
+        96
+      ],
+      "id": "940e96cc-c4ef-47d0-9d5b-fd614e7a201a",
+      "name": "Telegram Trigger",
+      "webhookId": "ca6339e2-06d7-46f7-9029-40c5632ee7c5",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.callback_query.data }}",
+                    "rightValue": "ack_",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "id": "7c6a2fcb-30d2-442b-8116-39320c487413"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "updated status"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -304,
+        96
+      ],
+      "id": "e7afb503-afa3-4c89-b502-049b0b883e45",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/update-ticket/",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "ticket_id",
+              "value": "={{ $json.callback_query.data.replace('ack_', '') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "40c88a08-a2ea-42c9-b34d-77dc140dbeda",
+      "name": "HTTP Request1",
+      "onError": "continueRegularOutput",
+      "notes": "❌ Error: Incident not found or server is down."
+    },
+    {
+      "parameters": {
+        "url": "={{ $node[\"Webhook\"].json.body.file_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -976,
+        336
+      ],
+      "id": "513a9502-96b6-46b5-bd7b-a5d45f0d57d9",
+      "name": "Download File",
+      "onError": "continueRegularOutput",
+      "notes": "📥 Downloads file from Django server. ⚠️ Error: File download failed - check file_url is accessible"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.virustotal.com/api/v3/files",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "value": "={{ $binary.data }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -768,
+        336
+      ],
+      "id": "6f6dcfe7-4d8e-4e2c-854b-4ed36d23df39",
+      "name": "Upload to VirusTotal",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ct2touOHW3FslsDR",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "⬆️ Uploads file to VirusTotal. ⚠️ Error: Upload failed - check API key and file size limits"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        336
+      ],
+      "id": "d235706b-a6e1-46c6-9511-30fdaedca505",
+      "name": "Wait for Scan",
+      "webhookId": "ab0906c7-1100-42e5-910a-5637ccf9a0e6",
+      "notes": "⏳ Waits 5 seconds for VirusTotal to process the file"
+    },
+    {
+      "parameters": {
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $node[\"Webhook\"].json.body.file_hash }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -352,
+        336
+      ],
+      "id": "5b8a5d40-e9e3-4e95-a099-c1e15b072ac4",
+      "name": "Query VirusTotal",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ct2touOHW3FslsDR",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "🔍 Queries VirusTotal for scan results. ⚠️ Error: Query failed - file may not be in database yet, will try direct hash query"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "06c9b212-93e3-4141-a2af-2642e8990910",
+              "leftValue": "={{ $json.data?.attributes?.last_analysis_stats?.malicious ?? 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -144,
+        336
+      ],
+      "id": "5777e111-2e89-4398-8961-0ca9d8e73d76",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/quarantine-user/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"user_id\": {{ $node[\"Webhook\"].json.body.user_id }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        64,
+        336
+      ],
+      "id": "63f66873-c8bd-4556-b4dc-e01d972f103d",
+      "name": "Quarantine User Auto",
+      "onError": "continueRegularOutput",
+      "notes": "🛡️ Automatically quarantines user when malware is detected. ⚠️ Error: Quarantine failed - check API endpoint and user_id"
+    },
+    {
+      "parameters": {
+        "chatId": "8119891894",
+        "text": "=🚨 SECURITY ALERT! 🚨 A malicious file was detected in Ticket #{{ $node[\"Webhook\"].json.body.ticket_id }}. VirusTotal Detections: {{ $node[\"Query VirusTotal\"].json.data.attributes.last_analysis_stats.malicious }}/70\n\n⚠️ User {{ $node[\"Webhook\"].json.body.reported_by }} has been automatically quarantined (sessions killed, account deactivated).",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Acknowledged",
+                    "additionalFields": {
+                      "callback_data": "=ack_{{ $node[\"Webhook\"].json.body.ticket_id }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        336
+      ],
+      "id": "9474240a-8a0b-4943-906c-016c39d9e19b",
+      "name": "Send a text message1",
+      "webhookId": "22b6cc27-786d-44ff-8ad9-e62df8191d5b",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8119891894",
+        "text": "=✅ SECURITY SCAN: CLEAN  Ticket #{{ $node[\"Webhook\"].json.body.ticket_id }}  No threats were detected by VirusTotal. The file appears safe.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        64,
+        496
+      ],
+      "id": "abcb586f-d86d-4881-ad0f-c1826d22b705",
+      "name": "Send a text message2",
+      "webhookId": "f0584645-dfe6-46c2-8743-3707e6b22cde",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "594864e1-7794-498b-b16c-22d0b87202f7",
+              "leftValue": "={{ $json.body.file_hash }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1152,
+        464
+      ],
+      "id": "2a2e7582-220d-4e57-8e30-7570bb0669a2",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "chatId": "8119891894",
+        "text": "=✅ Ticket #{{ $node[\"Webhook\"].json.body.ticket_id }}  No attachment detected. Skipping file security scan.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -960,
+        528
+      ],
+      "id": "1fca8c1a-13ef-482c-8347-54fb2acd4e9b",
+      "name": "Send a text message3",
+      "webhookId": "f0584645-dfe6-46c2-8743-3707e6b22cde",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Quarantine User Auto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quarantine User Auto": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Upload to VirusTotal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to VirusTotal": {
+      "main": [
+        [
+          {
+            "node": "Wait for Scan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Scan": {
+      "main": [
+        [
+          {
+            "node": "Query VirusTotal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query VirusTotal": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "5aff5eac-78bd-4739-817b-04b148f92b40",
+  "meta": {
+    "instanceId": "0d5c80395c175ca00fd50bec535bbb718a0d3f37988231f2fb393fbedcddc610"
+  },
+  "id": "fx6jWGFqRprow4aQD_WlD",
+  "tags": []
+}

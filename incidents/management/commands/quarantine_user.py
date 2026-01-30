@@ -14,10 +14,10 @@ class Command(BaseCommand):
         try:
             user = User.objects.get(pk=user_id)
             
-            # 1. Freeze the account
+            # 1. Freeze the account - Use direct database update
             was_active = user.is_active
-            user.is_active = False
-            user.save()
+            User.objects.filter(pk=user_id).update(is_active=False)
+            user.refresh_from_db()  # Refresh to get updated value
             
             if was_active:
                 self.stdout.write(f'Account deactivated: User ID {user_id} ({user.username})')
