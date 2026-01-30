@@ -12,6 +12,7 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.conf import settings
 import json
 import requests
 import hashlib
@@ -278,6 +279,8 @@ def report_incident(request):
             "department": incident.department,
             "laptop_serial": incident.laptop_serial,  # Uses your hardware snapshot
             "reported_by": request.user.username,
+            "reported_by_id": request.user.id,  # Include user ID for quarantine functionality
+            "user_id": request.user.id,  # Alternative field name
             "file_hash": file_hash if file_hash else "",  # Include file hash for VirusTotal
             "file_url": file_url  # File URL for n8n to download and upload to VirusTotal
         }
@@ -1166,6 +1169,41 @@ def update_incident_from_n8n(request):
         'ticket_id': ticket_id
     })
 
+def _delete_user_sessions(user):
+    """
+    Helper function to delete all active sessions for a user.
+    Returns tuple: (sessions_deleted, errors_list)
+    """
+    sessions_deleted = 0
+    errors = []
+    
+    # Get all non-expired sessions
+    all_sessions = Session.objects.filter(expire_date__gte=timezone.now())
+    
+    for session in all_sessions:
+        try:
+            # Decode session data
+            session_data = session.get_decoded()
+            session_user_id = session_data.get('_auth_user_id')
+            
+            # Check if this session belongs to the user
+            # Compare as strings to handle both string and int IDs
+            if session_user_id:
+                # Convert both to strings for comparison
+                if str(user.pk) == str(session_user_id):
+                    session.delete()
+                    sessions_deleted += 1
+        except Exception as decode_error:
+            # Some sessions might be corrupted or use different encoding
+            # Log the error but continue processing other sessions
+            errors.append({
+                'session_key': session.session_key[:20] + '...' if session.session_key else 'unknown',
+                'error': str(decode_error)
+            })
+            continue
+    
+    return sessions_deleted, errors
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def quarantine_user_api(request):
@@ -1215,28 +1253,38 @@ def quarantine_user_api(request):
     # Quarantine the user: deactivate account and kill all sessions
     try:
         # 1. Deactivate the account
+        was_active = user.is_active
         user.is_active = False
         user.save()
         
         # 2. Clear all active sessions for this user
-        all_sessions = Session.objects.filter(expire_date__gte=timezone.now())
-        sessions_deleted = 0
-        for session in all_sessions:
-            session_data = session.get_decoded()
-            if str(user.pk) == session_data.get('_auth_user_id'):
-                session.delete()
-                sessions_deleted += 1
+        sessions_deleted, decode_errors = _delete_user_sessions(user)
         
-        return JsonResponse({
+        # 3. Also clean up expired sessions (optional cleanup)
+        expired_deleted = Session.objects.filter(expire_date__lt=timezone.now()).delete()[0]
+        
+        # Build response
+        response_data = {
             'status': 'success', 
             'message': f'User ID {user_id} ({user.username}) has been quarantined successfully',
             'user_id': user_id,
             'username': user.username,
-            'sessions_deleted': sessions_deleted
-        })
+            'account_was_active': was_active,
+            'account_now_active': False,
+            'sessions_deleted': sessions_deleted,
+            'expired_sessions_cleaned': expired_deleted
+        }
+        
+        if decode_errors:
+            response_data['warnings'] = f'{len(decode_errors)} sessions had decoding issues'
+            response_data['decode_errors_count'] = len(decode_errors)
+        
+        return JsonResponse(response_data)
         
     except Exception as e:
+        import traceback
         return JsonResponse({
             'status': 'error', 
-            'message': f'Error quarantining user: {str(e)}'
+            'message': f'Error quarantining user: {str(e)}',
+            'traceback': traceback.format_exc() if settings.DEBUG else None
         }, status=500)
