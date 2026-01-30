@@ -19,6 +19,17 @@
                         <p><strong>Reporter:</strong> {{ ticket.user.username }}</p>
                         <p><strong>Date:</strong> {{ ticket.created_at|date:"M d, Y H:i" }}</p>
                         <p><strong>Issue Title:</strong> {{ ticket.title }}</p>
+                        <p><strong>AI Category:</strong> 
+                            {% if ticket.category %}
+                                <span class="badge bg-info px-2 py-1">
+                                    <i class="fas fa-robot"></i> {{ ticket.category }}
+                                </span>
+                            {% else %}
+                                <span class="badge bg-secondary px-2 py-1">
+                                    <i class="fas fa-robot"></i> Pending Classification
+                                </span>
+                            {% endif %}
+                        </p>
                         <p><strong>Issue Description:</strong> <span class="text-muted">{{ ticket.description }}</span></p>
                         {% if ticket.attachment %}
                         <p><strong>Attachment:</strong> 

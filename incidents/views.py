@@ -78,6 +78,13 @@ def home(request):
     if status_filter:
         incidents = incidents.filter(status=status_filter)
     
+    # IT Status filtering
+    it_status_filter = request.GET.get('it_status')
+    if it_status_filter == 'acknowledged':
+        incidents = incidents.filter(it_acknowledged=True)
+    elif it_status_filter == 'pending':
+        incidents = incidents.filter(it_acknowledged=False)
+    
     # Process incidents to extract smart scanner suggestions and calculate unread comments
     processed_incidents = []
     for incident in incidents:
@@ -276,6 +283,7 @@ def report_incident(request):
         payload = {
             "ticket_id": incident.id,
             "title": incident.title,
+            "description": incident.description,  # Include description for AI classification
             "department": incident.department,
             "laptop_serial": incident.laptop_serial,  # Uses your hardware snapshot
             "reported_by": request.user.username,
@@ -382,6 +390,13 @@ def admin_dashboard(request):
             incidents = incidents.filter(status__in=['Open', 'In Progress'])
         else:
             incidents = incidents.filter(status=status_filter)
+    
+    # IT Status filtering
+    it_status_filter = request.GET.get('it_status')
+    if it_status_filter == 'acknowledged':
+        incidents = incidents.filter(it_acknowledged=True)
+    elif it_status_filter == 'pending':
+        incidents = incidents.filter(it_acknowledged=False)
     
     # User filtering (only if not viewing specific user)
     if user_filter and not view_user:
@@ -1301,5 +1316,211 @@ def quarantine_user_api(request):
         return JsonResponse({
             'status': 'error', 
             'message': f'Error quarantining user: {str(e)}',
+            'traceback': traceback.format_exc() if settings.DEBUG else None
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_ticket_category(request):
+    """
+    API endpoint for n8n to update ticket category (AI classification).
+    Expects JSON payload: {"ticket_id": <number>, "category": "<category>"}
+    Or form data with ticket_id and category fields.
+    
+    Valid categories: Hardware, Software, Network, Account, Other
+    """
+    try:
+        # Try to parse JSON body first
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, try form data
+            if request.POST:
+                data = {
+                    'ticket_id': request.POST.get('ticket_id'),
+                    'category': request.POST.get('category')
+                }
+                # Handle case where n8n sends data in an "AI" field as JSON string
+                if 'AI' in request.POST:
+                    try:
+                        ai_data = json.loads(request.POST.get('AI'))
+                        data.update(ai_data)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            else:
+                return JsonResponse({
+                    'status': 'error', 
+                    'message': 'Invalid JSON payload or missing form data'
+                }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Error parsing request: {str(e)}'
+        }, status=400)
+    
+    # Validate ticket_id
+    ticket_id = data.get('ticket_id')
+    if not ticket_id:
+        return JsonResponse({
+            'status': 'error', 
+            'message': "Field 'ticket_id' is required"
+        }, status=400)
+    
+    # Convert to integer if it's a string
+    try:
+        if isinstance(ticket_id, str):
+            ticket_id = int(ticket_id.strip())
+        elif not isinstance(ticket_id, int):
+            ticket_id = int(ticket_id)
+    except (ValueError, TypeError):
+        return JsonResponse({
+            'status': 'error', 
+            'message': f"Field 'ticket_id' must be a number, got: {type(ticket_id).__name__}"
+        }, status=400)
+    
+    # Validate category
+    category = data.get('category', '').strip()
+    if not category:
+        return JsonResponse({
+            'status': 'error', 
+            'message': "Field 'category' is required"
+        }, status=400)
+    
+    # Validate category is one of the allowed choices
+    valid_categories = ['Hardware', 'Software', 'Network', 'Account', 'Other']
+    if category not in valid_categories:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f"Invalid category '{category}'. Must be one of: {', '.join(valid_categories)}"
+        }, status=400)
+    
+    # Get the incident
+    try:
+        incident = Incident.objects.get(id=ticket_id)
+    except Incident.DoesNotExist:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Incident #{ticket_id} not found'
+        }, status=404)
+    
+    # Update the category
+    try:
+        old_category = incident.category
+        incident.category = category
+        incident.save()
+        
+        return JsonResponse({
+            'status': 'success', 
+            'message': f'Ticket #{ticket_id} category updated successfully',
+            'ticket_id': ticket_id,
+            'old_category': old_category,
+            'new_category': category
+        })
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Error updating ticket category: {str(e)}',
+            'traceback': traceback.format_exc() if settings.DEBUG else None
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def classify_ticket_api(request):
+    """
+    API endpoint for n8n to classify a ticket using AI.
+    Accepts either:
+    - JSON payload: {"title": "...", "description": "..."} OR {"ticket_id": <number>}
+    - Form data with title/description or ticket_id
+    
+    Returns: {"predicted_category": "...", "confidence": 0.0-1.0}
+    """
+    try:
+        # Try to parse JSON body first
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, try form data
+            if request.POST:
+                data = request.POST.dict()
+            else:
+                return JsonResponse({
+                    'status': 'error', 
+                    'message': 'Invalid JSON payload or missing form data'
+                }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Error parsing request: {str(e)}'
+        }, status=400)
+    
+    # Import the classifier (lazy import to avoid loading sklearn on module load)
+    try:
+        import sys
+        import os
+        # Add project root to path if needed
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        
+        from ticket_classifier import classify_ticket, get_prediction_confidence
+    except ImportError as e:
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Failed to import classifier: {str(e)}. Make sure sklearn, pandas, and numpy are installed.'
+        }, status=500)
+    
+    # Get title and description - either directly or from ticket_id
+    title = data.get('title', '').strip()
+    description = data.get('description', '').strip()
+    ticket_id = data.get('ticket_id')
+    
+    # If ticket_id is provided, look up the incident
+    if ticket_id:
+        try:
+            if isinstance(ticket_id, str):
+                ticket_id = int(ticket_id.strip())
+            elif not isinstance(ticket_id, int):
+                ticket_id = int(ticket_id)
+            
+            incident = Incident.objects.get(id=ticket_id)
+            title = incident.title
+            description = incident.description
+        except (ValueError, TypeError):
+            return JsonResponse({
+                'status': 'error', 
+                'message': f"Invalid ticket_id: {ticket_id}"
+            }, status=400)
+        except Incident.DoesNotExist:
+            return JsonResponse({
+                'status': 'error', 
+                'message': f'Incident #{ticket_id} not found'
+            }, status=404)
+    
+    # Validate that we have some text to classify
+    if not title and not description:
+        return JsonResponse({
+            'status': 'error', 
+            'message': 'Either title/description or ticket_id must be provided'
+        }, status=400)
+    
+    # Classify the ticket
+    try:
+        predicted_category = classify_ticket(title, description)
+        confidence_data = get_prediction_confidence(title, description)
+        
+        return JsonResponse({
+            'status': 'success',
+            'predicted_category': predicted_category,
+            'confidence': confidence_data['confidence'],
+            'title': title,
+            'description': description[:100] + '...' if len(description) > 100 else description,  # Truncate for response
+            'ticket_id': ticket_id if ticket_id else None
+        })
+    except Exception as e:
+        import traceback
+        return JsonResponse({
+            'status': 'error', 
+            'message': f'Error classifying ticket: {str(e)}',
             'traceback': traceback.format_exc() if settings.DEBUG else None
         }, status=500)

@@ -83,6 +83,7 @@
                         <button type="submit" name="period" value="all" onclick="clearDateFilters(this)" class="btn {% if request.GET.period == 'all' or not request.GET.period or request.GET.from or request.GET.to %}btn-primary{% else %}btn-outline-primary{% endif %}">All</button>
                     </div>
                     {% if request.GET.status %}<input type="hidden" name="status" value="{{ request.GET.status }}">{% endif %}
+                    {% if request.GET.it_status %}<input type="hidden" name="it_status" value="{{ request.GET.it_status }}">{% endif %}
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small fw-bold">From</label>
@@ -99,6 +100,14 @@
                         <option value="Open" {% if request.GET.status == 'Open' %}selected{% endif %}>Open</option>
                         <option value="Resolved" {% if request.GET.status == 'Resolved' %}selected{% endif %}>Self Fixed</option>
                         <option value="Closed" {% if request.GET.status == 'Closed' %}selected{% endif %}>Closed</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small fw-bold">IT Status</label>
+                    <select name="it_status" class="form-select form-select-sm">
+                        <option value="">All IT Statuses</option>
+                        <option value="acknowledged" {% if request.GET.it_status == 'acknowledged' %}selected{% endif %}>Acknowledged</option>
+                        <option value="pending" {% if request.GET.it_status == 'pending' %}selected{% endif %}>Pending</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -225,6 +234,20 @@
                                         <div class="mb-3">
                                             <strong>Issue Title:</strong>
                                             <p class="mb-0">{{ incident.title }}</p>
+                                        </div>
+                                        <div class="mb-3">
+                                            <strong>AI Category:</strong>
+                                            <p class="mb-0">
+                                                {% if incident.category %}
+                                                    <span class="badge bg-info px-3 py-2">
+                                                        <i class="fas fa-robot"></i> {{ incident.category }}
+                                                    </span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary px-3 py-2">
+                                                        <i class="fas fa-robot"></i> Pending Classification
+                                                    </span>
+                                                {% endif %}
+                                            </p>
                                         </div>
                                         <div class="mb-3">
                                             <strong>Issue Description:</strong>

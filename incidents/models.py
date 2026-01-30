@@ -78,6 +78,22 @@ class Incident(models.Model):
     # File Attachment Fields (for VirusTotal scanning)
     attachment = models.FileField(upload_to='incident_attachments/', blank=True, null=True, help_text="Attached file for incident report")
     file_hash = models.CharField(max_length=64, blank=True, null=True, help_text="SHA256 hash of the attached file for VirusTotal scanning")
+    
+    # AI Classification Field
+    CATEGORY_CHOICES = [
+        ('Hardware', 'Hardware'),
+        ('Software', 'Software'),
+        ('Network', 'Network'),
+        ('Account', 'Account'),
+        ('Other', 'Other'),
+    ]
+    category = models.CharField(
+        max_length=50, 
+        choices=CATEGORY_CHOICES, 
+        blank=True, 
+        null=True,
+        help_text="AI-predicted category for the incident"
+    )
 
     def __str__(self):
         return f"{self.title} - {self.status}"

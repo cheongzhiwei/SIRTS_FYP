@@ -8,6 +8,8 @@ urlpatterns = [
     path('report/', views.report_incident, name='report_incident'),
     path('api/update-ticket/', views.update_incident_from_n8n, name='update_ticket'),
     path('api/quarantine-user/', views.quarantine_user_api, name='quarantine_user_api'),
+    path('api/classify-ticket/', views.classify_ticket_api, name='classify_ticket_api'),
+    path('api/update-ticket-category/', views.update_ticket_category, name='update_ticket_category'),
     
     
     # Admin pages
