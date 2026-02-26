@@ -11,17 +11,17 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -1024,
-        832
+        -688,
+        1520
       ],
-      "id": "3e65e093-9e6f-49df-b3bf-f280796d4807",
+      "id": "8c5c1ec4-cdfe-41ab-9cdf-9b8e79c9ea9e",
       "name": "Webhook",
       "webhookId": "d2997ce8-f3fb-46ca-9251-4744b1b4d2a5"
     },
     {
       "parameters": {
         "chatId": "8119891894",
-        "text": "=🚨 SIRTS Alert\n\n📋 Issue: {{ $node[\"Webhook\"].json.body.title }}\n📝 Description: {{ $node[\"Webhook\"].json.body.description }}\n🎫 Ticket ID: #{{ $node[\"Webhook\"].json.body.ticket_id }}\n🤖 AI Category: {{ $node[\"Classify Ticket\"].json.predicted_category }}\n💻 Hardware SN: {{ $node[\"Webhook\"].json.body.laptop_serial }}\n🏢 Department: {{ $node[\"Webhook\"].json.body.department }}\n👤 Reported By: {{ $node[\"Webhook\"].json.body.reported_by }}\n🆔 User ID: {{ $node[\"Webhook\"].json.body.reported_by_id }}\n\nPlease acknowledge ",
+        "text": "=🚨 SIRTS Alert\n\n📋 Issue: {{ $node[\"Webhook\"].json.body.title }}\n📝 Description: {{ $node[\"Webhook\"].json.body.description }}\n🤖 AI Category: {{ $node[\"Classify Ticket\"].json.predicted_category }}\n🎫 Ticket ID: #{{ $node[\"Webhook\"].json.body.ticket_id }}\n💻 Hardware SN: {{ $node[\"Webhook\"].json.body.laptop_serial }}\n🏢 Department: {{ $node[\"Webhook\"].json.body.department }}\n👤 Reported By: {{ $node[\"Webhook\"].json.body.reported_by }}\n🆔 User ID: {{ $node[\"Webhook\"].json.body.reported_by_id }}\n\nPlease acknowledge ",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -44,10 +44,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -336,
-        816
+        0,
+        1504
       ],
-      "id": "0631befb-a642-4f16-8e51-01e3414e6852",
+      "id": "f61e9166-68d1-4b4d-aeeb-ae482fbe3582",
       "name": "Send a text message",
       "webhookId": "671673f8-05dc-41c2-b6e0-85580d0ee48e",
       "credentials": {
@@ -67,10 +67,10 @@
       "type": "n8n-nodes-base.telegramTrigger",
       "typeVersion": 1.2,
       "position": [
-        368,
-        704
+        704,
+        1392
       ],
-      "id": "2a4d9cda-b622-4860-92ff-34ddca2df7e9",
+      "id": "d1c975e5-0cc4-4583-953c-2eeb5f9cfdc6",
       "name": "Telegram Trigger",
       "webhookId": "ca6339e2-06d7-46f7-9029-40c5632ee7c5",
       "credentials": {
@@ -115,37 +115,82 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        576,
-        704
+        912,
+        1392
       ],
-      "id": "58650393-8f26-4399-a3c9-d62ee68c0325",
+      "id": "3658f44e-d52b-4b0c-b9fc-e8d5522b9ae3",
       "name": "Switch"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:8000/api/update-ticket/",
+        "url": "=https://api.telegram.org/bot<YOUR_BOT_TOKEN>/answerCallbackQuery",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "ticket_id",
-              "value": "={{ $json.callback_query.data.replace('ack_', '') }}"
-            }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ { callback_query_id: $json.callback_query.id, text: '✅ Processing...', show_alert: false } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        784,
-        704
+        1008,
+        1392
       ],
-      "id": "78ded01f-5be3-4509-9d37-12f038c4e913",
+      "id": "answer-callback-query-node",
+      "name": "Answer Callback Query",
+      "onError": "continueRegularOutput",
+      "notes": "📞 Answers Telegram callback query. ⚠️ IMPORTANT: Replace <YOUR_BOT_TOKEN> in URL with your actual Telegram bot token from credentials"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/update-ticket/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { ticket_id: Number($node[\"Telegram Trigger\"].json.callback_query.data.replace('ack_', '')) } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1216,
+        1392
+      ],
+      "id": "090b45d9-d90e-461a-8120-840f969b17c5",
       "name": "HTTP Request1",
       "onError": "continueRegularOutput",
-      "notes": "❌ Error: Incident not found or server is down."
+      "notes": "📝 Updates ticket acknowledgment in Django. ⚠️ Check n8n execution logs if ticket is not updated. Error: Incident not found or server is down."
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $node[\"Telegram Trigger\"].json.callback_query.message.chat.id }}",
+        "text": "=✅ Ticket #{{ $node[\"Telegram Trigger\"].json.callback_query.data.replace('ack_', '') }} has been acknowledged successfully.",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1424,
+        1392
+      ],
+      "id": "send-confirmation-node",
+      "name": "Send Confirmation",
+      "webhookId": "confirmation-webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "eJc1mayLSdWhR7Q8",
+          "name": "Telegram account"
+        }
+      }
     },
     {
       "parameters": {
@@ -161,10 +206,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        -96,
-        944
+        240,
+        1632
       ],
-      "id": "c853a4be-b12a-43a0-8cb2-4ea2a3bbd662",
+      "id": "66227726-5483-473d-a0a3-24072004e881",
       "name": "Download File",
       "onError": "continueRegularOutput",
       "notes": "📥 Downloads file from Django server. ⚠️ Error: File download failed - check file_url is accessible"
@@ -175,17 +220,26 @@
         "url": "https://www.virustotal.com/api/v3/files",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
         "sendBody": true,
         "specifyBody": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "value": "={{ $binary.data }}"
+            }
+          ]
+        },
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        112,
-        944
+        448,
+        1632
       ],
-      "id": "8eb44ad2-578e-4d64-bf17-c8637697ee92",
+      "id": "315a75d3-be0f-405d-9c04-b96a13e1e2fb",
       "name": "Upload to VirusTotal",
       "credentials": {
         "httpHeaderAuth": {
@@ -197,32 +251,35 @@
       "notes": "⬆️ Uploads file to VirusTotal. ⚠️ Error: Upload failed - check API key and file size limits"
     },
     {
-      "parameters": {},
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        320,
-        944
+        656,
+        1632
       ],
-      "id": "15223861-ecdb-43f7-b72f-915180ebfee2",
+      "id": "2540ab5d-2ad0-48e9-afa8-7db3a60382e1",
       "name": "Wait for Scan",
-      "webhookId": "ab0906c7-1100-42e5-910a-5637ccf9a0e6",
-      "notes": "⏳ Waits 5 seconds for VirusTotal to process the file"
+      "notes": "⏳ Waits 30 seconds for VirusTotal to complete the scan"
     },
     {
       "parameters": {
-        "url": "=https://www.virustotal.com/api/v3/files/{{ $node[\"Webhook\"].json.body.file_hash }}",
+        "url": "=https://www.virustotal.com/api/v3/files/{{ $node[\"Upload to VirusTotal\"].json?.data?.id || $node[\"Webhook\"].json.body.file_hash }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        528,
-        944
+        864,
+        1632
       ],
-      "id": "962fb9e8-e6b4-4dd7-996f-15b2c51e1f0c",
+      "id": "296107c5-2f14-4924-8ae1-5d2a999db839",
       "name": "Query VirusTotal",
       "credentials": {
         "httpHeaderAuth": {
@@ -260,10 +317,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        736,
-        944
+        1072,
+        1632
       ],
-      "id": "fc994116-704c-427b-8cf9-43bc72341695",
+      "id": "fffdb03b-89cc-4b30-af26-94645edd98ec",
       "name": "If1"
     },
     {
@@ -287,10 +344,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        944,
-        944
+        1280,
+        1632
       ],
-      "id": "765bb0e0-7610-4ad0-9ff9-cea71bbcf7ca",
+      "id": "e8ed9f62-7067-49f2-a2de-8492fc43fdda",
       "name": "Quarantine User Auto",
       "onError": "continueRegularOutput",
       "notes": "🛡️ Automatically quarantines user when malware is detected. ⚠️ Error: Quarantine failed - check API endpoint and user_id"
@@ -305,10 +362,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1120,
-        944
+        1456,
+        1632
       ],
-      "id": "60f8bf0d-16b2-4c01-803f-2a486e58aa1a",
+      "id": "45448332-b540-47bb-9847-04014c9f5c84",
       "name": "Send a text message1",
       "webhookId": "22b6cc27-786d-44ff-8ad9-e62df8191d5b",
       "credentials": {
@@ -327,10 +384,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        944,
-        1104
+        1280,
+        1792
       ],
-      "id": "862f2eaf-cfad-429c-9110-c9d83fbe53b1",
+      "id": "dfc7f44e-2f68-43d9-a932-eedb94eae2e0",
       "name": "Send a text message2",
       "webhookId": "f0584645-dfe6-46c2-8743-3707e6b22cde",
       "credentials": {
@@ -352,7 +409,7 @@
           "conditions": [
             {
               "id": "594864e1-7794-498b-b16c-22d0b87202f7",
-              "leftValue": "={{ $json.body.file_hash }}",
+              "leftValue": "={{ $node[\"Webhook\"].json.body.file_url || $json.body.file_url }}",
               "rightValue": "",
               "operator": {
                 "type": "string",
@@ -368,10 +425,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -336,
-        1008
+        0,
+        1696
       ],
-      "id": "5f010e67-6e25-44c1-8b08-f79e392c79b4",
+      "id": "07aaede2-e21b-4973-bc04-07ce40245ccf",
       "name": "If"
     },
     {
@@ -383,10 +440,10 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        -80,
-        1136
+        256,
+        1824
       ],
-      "id": "b639e7e0-aece-49ad-9421-f7a6949ab59a",
+      "id": "e735566a-6088-4204-a384-1a87d8b47942",
       "name": "Send a text message3",
       "webhookId": "f0584645-dfe6-46c2-8743-3707e6b22cde",
       "credentials": {
@@ -408,10 +465,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        -592,
-        832
+        -256,
+        1520
       ],
-      "id": "0b7d7ccb-256f-4fff-859f-a324a82cd370",
+      "id": "ab94cc19-b1a4-42e8-aabd-89612bab3498",
       "name": "Update Ticket Category",
       "onError": "continueRegularOutput",
       "notes": "📝 Updates ticket category in database. ⚠️ Error: Update failed - check API endpoint and ticket_id"
@@ -428,10 +485,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        -816,
-        832
+        -480,
+        1520
       ],
-      "id": "c9268ace-9ea9-43fc-831b-df3bc2b398bc",
+      "id": "c2c61093-269b-4266-a0a6-fbc27f6aef36",
       "name": "Classify Ticket",
       "onError": "continueRegularOutput",
       "notes": "🤖 AI Classification: Classifies ticket into Hardware/Software/Network/Account/Other. ⚠️ Error: Classification failed - check API endpoint"
@@ -444,6 +501,33 @@
         [
           {
             "node": "Classify Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Ticket": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Category",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Category": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a text message",
             "type": "main",
             "index": 0
           }
@@ -465,7 +549,29 @@
       "main": [
         [
           {
+            "node": "Answer Callback Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer Callback Query": {
+      "main": [
+        [
+          {
             "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation",
             "type": "main",
             "index": 0
           }
@@ -562,36 +668,9 @@
           }
         ]
       ]
-    },
-    "Update Ticket Category": {
-      "main": [
-        [
-          {
-            "node": "If",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Send a text message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Classify Ticket": {
-      "main": [
-        [
-          {
-            "node": "Update Ticket Category",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "availableInMCP": false

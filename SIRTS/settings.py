@@ -136,5 +136,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Leave empty to use request-based URLs (may not work for n8n in Docker)
 EXTERNAL_BASE_URL = 'https://backmost-blowiest-arnold.ngrok-free.dev'  # Update this when ngrok URL changes
 
+# n8n webhook base URL - use ngrok HTTPS URL for webhook calls
+# This is the URL Django will use to send webhook requests to n8n
+N8N_BASE_URL = 'https://backmost-blowiest-arnold.ngrok-free.dev'  # Update this when ngrok URL changes
+
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'report_incident'

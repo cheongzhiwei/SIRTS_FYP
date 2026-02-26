@@ -246,6 +246,23 @@ def report_incident(request):
         # 4. Save the incident with the "Snapshot" locked in
         incident.save()
         
+        # 4.5. AI Classification - Automatically classify the ticket
+        try:
+            import sys
+            import os
+            # Add project root to path if needed
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if project_root not in sys.path:
+                sys.path.insert(0, project_root)
+            
+            from ticket_classifier import classify_ticket
+            predicted_category = classify_ticket(incident.title, incident.description)
+            incident.category = predicted_category
+            incident.save()
+        except Exception as e:
+            # If classification fails, continue without it (non-critical)
+            print(f"AI Classification failed: {e}")
+        
         # If self-fixed, set resolved_at to created_at (same date)
         if status_value == 'Resolved':
             incident.resolved_at = incident.created_at
@@ -258,7 +275,11 @@ def report_incident(request):
         
         # 5. Trigger n8n Webhook with file_hash and file_url for VirusTotal scanning
         from django.conf import settings
-        n8n_url = f"{settings.EXTERNAL_BASE_URL}/webhook-test/new-incident"
+        # n8n webhook URL - use N8N_BASE_URL if set, otherwise use ngrok URL for HTTPS
+        # Use /webhook/ for production (workflow active), /webhook-test/ for testing (workflow inactive)
+        n8n_base_url = getattr(settings, 'N8N_BASE_URL', 'https://backmost-blowiest-arnold.ngrok-free.dev')
+        webhook_path = getattr(settings, 'N8N_WEBHOOK_PATH', '/webhook-test/new-incident')  # Default to test webhook
+        n8n_url = f"{n8n_base_url.rstrip('/')}{webhook_path}"
         
         # Build file URL that n8n can access (use EXTERNAL_BASE_URL if available, otherwise use request host)
         file_url = ""
