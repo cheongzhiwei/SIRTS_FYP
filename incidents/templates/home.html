@@ -124,9 +124,21 @@
             <h5 class="mb-0 fw-bold">
                 <i class="fas fa-history"></i> My Incident History
             </h5>
-            <span class="badge bg-light text-dark border">
-                Total: {{ status_counts.total }} tickets
-            </span>
+            <div class="d-flex align-items-center gap-2">
+                <form method="GET" class="d-inline" id="pageSizeForm">
+                    {% if request.GET.status %}<input type="hidden" name="status" value="{{ request.GET.status }}">{% endif %}
+                    {% if request.GET.period %}<input type="hidden" name="period" value="{{ request.GET.period }}">{% endif %}
+                    {% if request.GET.from %}<input type="hidden" name="from" value="{{ request.GET.from }}">{% endif %}
+                    {% if request.GET.to %}<input type="hidden" name="to" value="{{ request.GET.to }}">{% endif %}
+                    {% if request.GET.it_status %}<input type="hidden" name="it_status" value="{{ request.GET.it_status }}">{% endif %}
+                    <input type="hidden" name="page_size" id="pageSizeInput" value="{{ page_size }}">
+                    <div class="btn-group btn-group-sm">
+                        <button type="submit" name="page_size" value="10" class="btn {% if page_size == 10 %}btn-primary{% else %}btn-outline-primary{% endif %}">10</button>
+                        <button type="submit" name="page_size" value="50" class="btn {% if page_size == 50 %}btn-primary{% else %}btn-outline-primary{% endif %}">50</button>
+                        <button type="submit" name="page_size" value="100" class="btn {% if page_size == 100 %}btn-primary{% else %}btn-outline-primary{% endif %}">100</button>
+                    </div>
+                </form>
+            </div>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -489,6 +501,42 @@
                 </table>
             </div>
         </div>
+        {% if processed_incidents.paginator.num_pages > 1 %}
+        <div class="card-footer bg-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="small text-muted">
+                    Page {{ processed_incidents.number }} of {{ processed_incidents.paginator.num_pages }}
+                </div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if processed_incidents.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ processed_incidents.previous_page_number }}">Previous</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                        {% endif %}
+                        {% for num in processed_incidents.paginator.page_range %}
+                            {% if num == processed_incidents.number %}
+                                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                            {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ num }}">{{ num }}</a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        {% if processed_incidents.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ processed_incidents.next_page_number }}">Next</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">Next</span></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Quick Actions -->

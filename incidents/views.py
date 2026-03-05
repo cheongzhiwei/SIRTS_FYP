@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
+from django.core.paginator import Paginator
 import json
 import requests
 import hashlib
@@ -29,6 +30,13 @@ def home(request):
     period_filter = request.GET.get('period', 'week')  # Default to week
     from_date = request.GET.get('from')
     to_date = request.GET.get('to')
+    page_size_param = request.GET.get('page_size', '10')
+    try:
+        page_size = int(page_size_param)
+    except (TypeError, ValueError):
+        page_size = 10
+    if page_size not in [10, 50, 100]:
+        page_size = 10
     
     # Period filtering (today, week, month, all)
     today = timezone.now().date()
@@ -118,6 +126,17 @@ def home(request):
                 incident_dict['unread_comments_count'] = incident.comments.count()
         
         processed_incidents.append(incident_dict)
+
+    # Pagination for processed incidents
+    paginator = Paginator(processed_incidents, page_size)
+    page_number = request.GET.get('page', 1)
+    processed_page = paginator.get_page(page_number)
+
+    # Build base query string for pagination links (exclude page)
+    query_params = request.GET.copy()
+    if 'page' in query_params:
+        query_params.pop('page')
+    base_query = query_params.urlencode()
     
     # Calculate status counts based on filtered data (for status bar)
     status_bar_base = Incident.objects.filter(user=request.user)
@@ -157,12 +176,15 @@ def home(request):
     
     context = {
         'incidents': incidents,
-        'processed_incidents': processed_incidents,
+        'processed_incidents': processed_page,
         'tickets': incidents,
         'status_counts': status_counts,
         'period_filter': period_filter,
         'from_date_display': from_date_display,
         'to_date_display': to_date_display,
+        'page_size': page_size,
+        'page_sizes': [10, 50, 100],
+        'base_query': base_query,
     }
     return render(request, 'home.html', context)
 
@@ -333,14 +355,22 @@ def admin_dashboard(request):
     
     status_filter = request.GET.get('status')
     user_filter = request.GET.get('user')
-    model_filter = request.GET.get('model')
     period_filter = request.GET.get('period', 'all')
     from_date = request.GET.get('from')
     to_date = request.GET.get('to')
-    dept_filter = request.GET.get('dept')
+    priority_filter = request.GET.get('priority')
     serial_filter = request.GET.get('serial')  # Filter by laptop serial number
     view_user = request.GET.get('view_user')  # View all history for a specific user
     view_serial = request.GET.get('view_serial')  # View all history for a specific laptop serial
+    my_tickets = request.GET.get('my_tickets')  # Filter to show only tickets claimed by current user
+    ticket_type = request.GET.get('ticket_type', 'active')  # 'active' or 'finished' for My Tickets view
+    page_size_param = request.GET.get('page_size', '10')
+    try:
+        page_size = int(page_size_param)
+    except (TypeError, ValueError):
+        page_size = 10
+    if page_size not in [10, 50, 100]:
+        page_size = 10
 
     # Period filtering (today, week, month, all)
     today = timezone.now().date()
@@ -412,24 +442,37 @@ def admin_dashboard(request):
         else:
             incidents = incidents.filter(status=status_filter)
     
-    # IT Status filtering
-    it_status_filter = request.GET.get('it_status')
-    if it_status_filter == 'acknowledged':
-        incidents = incidents.filter(it_acknowledged=True)
-    elif it_status_filter == 'pending':
-        incidents = incidents.filter(it_acknowledged=False)
+    # My Tickets filtering - Show only tickets claimed by current user
+    if my_tickets == '1':
+        incidents = incidents.filter(it_acknowledged_by=request.user)
+        # Sub-filter: Active (In Progress) or Finished (Resolved/Closed)
+        if ticket_type == 'active':
+            incidents = incidents.filter(status='In Progress')
+        elif ticket_type == 'finished':
+            incidents = incidents.filter(status__in=['Resolved', 'Closed'])
+    
+    # IT Status filtering (only if not in My Tickets view)
+    if not my_tickets:
+        it_status_filter = request.GET.get('it_status')
+        if it_status_filter == 'acknowledged':
+            incidents = incidents.filter(it_acknowledged=True)
+        elif it_status_filter == 'pending':
+            incidents = incidents.filter(it_acknowledged=False)
     
     # User filtering (only if not viewing specific user)
     if user_filter and not view_user:
         incidents = incidents.filter(user__username__icontains=user_filter)
     
-    # Department filtering - filter by user's current department from EmployeeProfile
-    if dept_filter:
-        incidents = incidents.filter(user__employeeprofile__department=dept_filter)
-    
-    # Model filtering (if laptop model exists)
-    if model_filter:
-        incidents = incidents.filter(laptop_model__icontains=model_filter)
+    # Priority filtering based on AI category
+    if priority_filter == 'high':
+        # High priority: Network or Account issues
+        incidents = incidents.filter(category__in=['Network', 'Account'])
+    elif priority_filter == 'medium':
+        # Medium priority: Software issues
+        incidents = incidents.filter(category='Software')
+    elif priority_filter == 'low':
+        # Low priority: everything else (Hardware, Other, missing category)
+        incidents = incidents.exclude(category__in=['Network', 'Account', 'Software'])
     
     # Serial filtering (only if not viewing specific serial)
     if serial_filter and not view_serial:
@@ -448,13 +491,13 @@ def admin_dashboard(request):
         # Apply period/date range filter
         status_bar_base = get_period_queryset(status_bar_base)
     
-    # Apply department filter (if set) - filter by user's current department from EmployeeProfile
-    if dept_filter:
-        status_bar_base = status_bar_base.filter(user__employeeprofile__department=dept_filter)
-    
-    # Apply laptop model filter (if set)
-    if model_filter:
-        status_bar_base = status_bar_base.filter(laptop_model__icontains=model_filter)
+    # Apply priority filter (if set) so cards match current view
+    if priority_filter == 'high':
+        status_bar_base = status_bar_base.filter(category__in=['Network', 'Account'])
+    elif priority_filter == 'medium':
+        status_bar_base = status_bar_base.filter(category='Software')
+    elif priority_filter == 'low':
+        status_bar_base = status_bar_base.exclude(category__in=['Network', 'Account', 'Software'])
     
     # Apply user filter (if set) - this might be useful for status bars too
     if user_filter and not view_user:
@@ -510,9 +553,14 @@ def admin_dashboard(request):
     closed_count = status_bar_base.filter(status='Closed').count()
     open_year_count = Incident.objects.filter(status__in=['Open', 'In Progress'], created_at__year=datetime.now().year).count()
     
-    # Calculate unread comments for each incident (for IT staff)
+    # Pagination for incidents list
+    paginator = Paginator(incidents, page_size)
+    page_number = request.GET.get('page', 1)
+    incidents_page = paginator.get_page(page_number)
+    
+    # Calculate unread comments for each incident (for IT staff) on the current page only
     incidents_with_unread = []
-    for incident in incidents:
+    for incident in incidents_page.object_list:
         unread_count = 0
         if incident.comments.exists():
             try:
@@ -525,8 +573,14 @@ def admin_dashboard(request):
             'unread_comments_count': unread_count
         })
     
+    # Build base query string for pagination links (exclude page)
+    query_params = request.GET.copy()
+    if 'page' in query_params:
+        query_params.pop('page')
+    base_query = query_params.urlencode()
+    
     context = {
-        'incidents': incidents,
+        'incidents': incidents_page,
         'incidents_with_unread': incidents_with_unread,  # For template to show notifications
         'open_count': open_count,
         'resolved_count': resolved_count,
@@ -539,6 +593,12 @@ def admin_dashboard(request):
         'view_user': view_user_display,  # User being viewed
         'view_serial': view_serial_display,  # Serial being viewed
         'department_choices': EmployeeProfile.DEPARTMENT_CHOICES,  # Department choices for dropdown
+        'page_size': page_size,
+        'page_sizes': [10, 50, 100],
+        'base_query': base_query,
+        'my_tickets': my_tickets,  # Whether showing My Tickets view
+        'ticket_type': ticket_type,  # 'active' or 'finished' for My Tickets
+        'priority_filter': priority_filter,
     }
     return render(request, 'admin_dashboard.html', context)
 @login_required
@@ -925,7 +985,8 @@ def telegram_acknowledge(request, ticket_id):
 @login_required
 def acknowledge_ticket(request, ticket_id):
     """
-    Allow IT staff to acknowledge a ticket from the webapp.
+    Allow IT staff to acknowledge (claim) a ticket from the webapp.
+    Implements ticket claiming logic: only unclaimed tickets can be claimed.
     """
     if not request.user.is_staff:
         messages.error(request, "Only IT staff can acknowledge tickets.")
@@ -937,7 +998,15 @@ def acknowledge_ticket(request, ticket_id):
         messages.error(request, "Ticket not found.")
         return redirect('admin_dashboard')
     
-    # Update incident acknowledgment
+    # Prevent double-claiming: Check if ticket is already claimed
+    if ticket.it_acknowledged and ticket.it_acknowledged_by:
+        if ticket.it_acknowledged_by == request.user:
+            messages.info(request, f"Ticket #{ticket_id} is already claimed by you.")
+        else:
+            messages.warning(request, f"Ticket #{ticket_id} is already claimed by {ticket.it_acknowledged_by.username}.")
+        return redirect('admin_dashboard')
+    
+    # Update incident acknowledgment (Claiming logic)
     ticket.it_acknowledged = True
     ticket.it_acknowledged_at = timezone.now()
     ticket.it_acknowledged_by = request.user
@@ -946,8 +1015,9 @@ def acknowledge_ticket(request, ticket_id):
         ticket.status = 'In Progress'
     ticket.save()
     
-    messages.success(request, f"Ticket #{ticket_id} acknowledged successfully.")
-    return redirect('manage_ticket', ticket_id=ticket_id)
+    messages.success(request, f"Ticket #{ticket_id} claimed successfully. You are now working on this ticket.")
+    # Redirect back to admin dashboard (preserve any filters)
+    return redirect('admin_dashboard')
 
 @login_required
 def add_comment(request, ticket_id):

@@ -41,6 +41,37 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
     font-size: 0.7em;
     margin-left: 3px;
 }
+
+/* Visual indicators for unclaimed tickets */
+.table-warning.border-start {
+    background-color: #fff3cd !important;
+}
+
+.table-warning.border-start:hover {
+    background-color: #ffe69c !important;
+}
+
+/* Nav tabs styling */
+.nav-tabs .nav-link {
+    color: #495057;
+    border: none;
+    border-bottom: 2px solid transparent;
+}
+
+.nav-tabs .nav-link:hover {
+    border-bottom-color: #dee2e6;
+}
+
+.nav-tabs .nav-link.active {
+    color: #007bff;
+    border-bottom-color: #007bff;
+    font-weight: 600;
+}
+
+.nav-pills .nav-link {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+}
 </style>
 {% endblock %}
 
@@ -59,7 +90,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
     <div class="row mb-4 text-center text-white g-3">
         <!-- 1st: OPEN -->
         <div class="col">
-            <a href="?status=Open&period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.dept %}&dept={{ request.GET.dept }}{% endif %}{% if request.GET.model %}&model={{ request.GET.model }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}" class="text-decoration-none">
+            <a href="?status=Open&period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}{% if my_tickets %}&my_tickets=1&ticket_type={{ ticket_type }}{% endif %}" class="text-decoration-none">
                 <div class="card bg-danger p-3 shadow-sm border-0" style="cursor: pointer;">
                     <div class="small fw-bold">OPEN</div>
                     <h2 class="mb-0">{{ open_count }}</h2>
@@ -68,7 +99,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
         </div>
         <!-- 2nd: SELF FIXED -->
         <div class="col">
-            <a href="?status=Resolved&period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.dept %}&dept={{ request.GET.dept }}{% endif %}{% if request.GET.model %}&model={{ request.GET.model }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}" class="text-decoration-none">
+            <a href="?status=Resolved&period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}{% if my_tickets %}&my_tickets=1&ticket_type={{ ticket_type }}{% endif %}" class="text-decoration-none">
                 <div class="card bg-primary p-3 shadow-sm border-0" style="cursor: pointer;">
                     <div class="small fw-bold">SELF FIXED</div>
                     <h2 class="mb-0">{{ resolved_count }}</h2>
@@ -77,7 +108,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
         </div>
         <!-- 3rd: CLOSE -->
         <div class="col">
-            <a href="?status=Closed&period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.dept %}&dept={{ request.GET.dept }}{% endif %}{% if request.GET.model %}&model={{ request.GET.model }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}" class="text-decoration-none">
+            <a href="?status=Closed&period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}{% if my_tickets %}&my_tickets=1&ticket_type={{ ticket_type }}{% endif %}" class="text-decoration-none">
                 <div class="card bg-success p-3 shadow-sm border-0" style="cursor: pointer;">
                     <div class="small fw-bold">CLOSE</div>
                     <h2 class="mb-0">{{ closed_count }}</h2>
@@ -86,7 +117,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
         </div>
         <!-- 4th: TOTAL TICKETS (linkable to all statuses) -->
         <div class="col">
-            <a href="?period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.dept %}&dept={{ request.GET.dept }}{% endif %}{% if request.GET.model %}&model={{ request.GET.model }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}" class="text-decoration-none">
+            <a href="?period={{ period_filter|default:'all' }}{% if request.GET.from %}&from={{ request.GET.from }}{% endif %}{% if request.GET.to %}&to={{ request.GET.to }}{% endif %}{% if request.GET.priority %}&priority={{ request.GET.priority }}{% endif %}{% if request.GET.user %}&user={{ request.GET.user }}{% endif %}{% if my_tickets %}&my_tickets=1&ticket_type={{ ticket_type }}{% endif %}" class="text-decoration-none">
                 <div class="card bg-secondary p-3 shadow-sm border-0" style="cursor: pointer;">
                     <div class="small fw-bold">TOTAL TICKETS</div>
                     <h2 class="mb-0">{{ all_count }}</h2>
@@ -116,8 +147,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                     {% if request.GET.status %}<input type="hidden" name="status" value="{{ request.GET.status }}">{% endif %}
                     {% if request.GET.it_status %}<input type="hidden" name="it_status" value="{{ request.GET.it_status }}">{% endif %}
                     {% if request.GET.user %}<input type="hidden" name="user" value="{{ request.GET.user }}">{% endif %}
-                    {% if request.GET.dept %}<input type="hidden" name="dept" value="{{ request.GET.dept }}">{% endif %}
-                    {% if request.GET.model %}<input type="hidden" name="model" value="{{ request.GET.model }}">{% endif %}
+                    {% if request.GET.priority %}<input type="hidden" name="priority" value="{{ request.GET.priority }}">{% endif %}
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small fw-bold">From</label>
@@ -146,17 +176,13 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label small fw-bold">Department</label>
-                    <select name="dept" class="form-select form-select-sm">
-                        <option value="">All Depts</option>
-                        {% for dept_code, dept_name in department_choices %}
-                            <option value="{{ dept_code }}" {% if request.GET.dept == dept_code %}selected{% endif %}>{{ dept_name }}</option>
-                        {% endfor %}
+                    <label class="form-label small fw-bold">Priority</label>
+                    <select name="priority" class="form-select form-select-sm">
+                        <option value="">All Priority</option>
+                        <option value="high" {% if request.GET.priority == 'high' %}selected{% endif %}>High</option>
+                        <option value="medium" {% if request.GET.priority == 'medium' %}selected{% endif %}>Medium</option>
+                        <option value="low" {% if request.GET.priority == 'low' %}selected{% endif %}>Low</option>
                     </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label small fw-bold">Laptop Model</label>
-                    <input type="text" name="model" class="form-control form-control-sm" placeholder="e.g. Dell" value="{{ request.GET.model }}">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small fw-bold">Username</label>
@@ -170,10 +196,49 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
         </div>
     </div>
 
+    <!-- Global Pool / My Tickets Tabs -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body p-0">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link {% if not my_tickets %}active{% endif %}" href="{% url 'admin_dashboard' %}{% if request.GET.page_size %}?page_size={{ request.GET.page_size }}{% endif %}" role="tab">
+                        <i class="fas fa-globe"></i> Global Pool
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a class="nav-link {% if my_tickets %}active{% endif %}" href="{% url 'admin_dashboard' %}?my_tickets=1&ticket_type=active{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}" role="tab">
+                        <i class="fas fa-user"></i> My Tickets
+                    </a>
+                </li>
+            </ul>
+            {% if my_tickets %}
+            <!-- My Tickets Sub-tabs -->
+            <div class="px-3 pt-2 pb-2 bg-light border-top">
+                <ul class="nav nav-pills nav-sm" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link {% if ticket_type == 'active' %}active{% endif %}" href="{% url 'admin_dashboard' %}?my_tickets=1&ticket_type=active{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}">
+                            <i class="fas fa-clock"></i> Active
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if ticket_type == 'finished' %}active{% endif %}" href="{% url 'admin_dashboard' %}?my_tickets=1&ticket_type=finished{% if request.GET.page_size %}&page_size={{ request.GET.page_size }}{% endif %}">
+                            <i class="fas fa-check-circle"></i> Finished
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0 fw-bold">
-                Ticket List
+                {% if my_tickets %}
+                    My Tickets - {{ ticket_type|title }}
+                {% else %}
+                    Global Pool - All Tickets
+                {% endif %}
                 {% if view_user %}
                     <small class="text-muted">- History for user: <strong>{{ view_user }}</strong></small>
                 {% elif view_serial %}
@@ -184,7 +249,18 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                 {% if view_user or view_serial %}
                     <a href="{% url 'admin_dashboard' %}" class="btn btn-sm btn-outline-secondary">Clear Filter</a>
                 {% endif %}
-                <span class="badge bg-light text-dark border">Showing: {{ incidents.count }} tickets</span>
+                <form method="get" class="d-flex align-items-center gap-2">
+                    {% for key, value in request.GET.items %}
+                        {% if key != 'page' and key != 'page_size' %}
+                            <input type="hidden" name="{{ key }}" value="{{ value }}">
+                        {% endif %}
+                    {% endfor %}
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Rows per page">
+                        <button type="submit" name="page_size" value="10" class="btn {% if page_size == 10 %}btn-primary{% else %}btn-outline-primary{% endif %}">10</button>
+                        <button type="submit" name="page_size" value="50" class="btn {% if page_size == 50 %}btn-primary{% else %}btn-outline-primary{% endif %}">50</button>
+                        <button type="submit" name="page_size" value="100" class="btn {% if page_size == 100 %}btn-primary{% else %}btn-outline-primary{% endif %}">100</button>
+                    </div>
+                </form>
             </div>
         </div>
         <div class="table-responsive">
@@ -194,7 +270,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                         <th>ID</th>
                         <th>Username</th>
                         <th>Dept</th>
-                        <th>Laptop</th>
+                        <th>Priority</th>
                         <th>Issue Title</th>
                         <th>Date Reported</th>
                         <th>Status</th>
@@ -205,8 +281,13 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                 <tbody>
                     {% for item in incidents_with_unread %}
                     {% with incident=item.incident %}
-                    <tr>
-                        <td class="fw-bold">#{{ incident.id }}</td>
+                    <tr {% if not incident.it_acknowledged %}class="table-warning border-start border-danger border-3"{% endif %}>
+                        <td class="fw-bold">
+                            #{{ incident.id }}
+                            {% if not incident.it_acknowledged %}
+                                <span class="badge bg-danger ms-1">NEW</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if view_user %}
                                 {{ incident.user.username }}
@@ -219,22 +300,23 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                         </td>
                         <td>{{ incident.department|default:"General" }}</td>
                         <td>
-                            {{ incident.laptop_model|default:"N/A" }}
-                            <br>
-                            {% if incident.laptop_serial %}
-                                {% if view_serial %}
-                                    <small class="text-muted">Serial: {{ incident.laptop_serial }}</small>
-                                {% else %}
-                                    <small class="text-muted">
-                                        Serial: 
-                                        <a href="{% url 'admin_dashboard' %}?view_serial={{ incident.laptop_serial|urlencode }}" class="text-decoration-none" title="View all history for this laptop">
-                                            {{ incident.laptop_serial }}
-                                            <i class="fas fa-link text-primary small"></i>
-                                        </a>
-                                    </small>
-                                {% endif %}
+                            {% comment %}
+                                Priority is derived from AI category:
+                                - High: Network / Account
+                                - Medium: Software
+                                - Low: Hardware / Other / Unknown
+                            {% endcomment %}
+                            {% if incident.category == "Network" or incident.category == "Account" %}
+                                <span class="badge bg-danger px-3">High</span>
+                            {% elif incident.category == "Software" %}
+                                <span class="badge bg-warning text-dark px-3">Medium</span>
                             {% else %}
-                                <small class="text-muted">Serial: -</small>
+                                <span class="badge bg-success px-3">Low</span>
+                            {% endif %}
+                            {% if incident.category %}
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-robot"></i> {{ incident.category }}
+                                </small>
                             {% endif %}
                         </td>
                         <td>
@@ -259,9 +341,12 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                         </td>
                         <td>
                             {% if incident.it_acknowledged %}
-                                <span class="badge bg-info rounded-pill px-2 mb-1 d-block">
-                                    <i class="fas fa-check-circle"></i> Acknowledged
-                                </span>
+                                <small class="text-muted d-block">
+                                    Claimed by {{ incident.it_acknowledged_by.username|default:"Unknown" }}
+                                    {% if incident.it_acknowledged_at %}
+                                        <br><small>{{ incident.it_acknowledged_at|date:"d/m/Y H:i" }}</small>
+                                    {% endif %}
+                                </small>
                                 {% if incident.it_status_message %}
                                     <div class="mt-1 p-2 bg-light border rounded small">
                                         <strong>IT Message:</strong><br>
@@ -269,11 +354,24 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                                     </div>
                                 {% endif %}
                             {% else %}
-                                <span class="badge bg-secondary rounded-pill px-2">Not Acknowledged</span>
+                                <small class="text-muted">
+                                    <strong>Status:</strong> Unclaimed
+                                </small>
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary btn-sm px-3 position-relative" onclick="markCommentsRead({{ incident.id }})">
+                            {% if not incident.it_acknowledged %}
+                                <!-- Acknowledge Button for Unclaimed Tickets (neutral color) -->
+                                <form method="post" action="{% url 'acknowledge_ticket' incident.id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="redirect_to" value="admin_dashboard">
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm px-3 mb-1" onclick="return confirm('Claim this ticket? You will be assigned as the owner.')">
+                                        <i class="fas fa-hand-paper"></i> Acknowledge
+                                    </button>
+                                </form>
+                                <br>
+                            {% endif %}
+                            <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary btn-sm px-3 position-relative {% if not incident.it_acknowledged %}mt-1{% endif %}" onclick="markCommentsRead({{ incident.id }})" title="{% if incident.it_acknowledged %}Claimed by {{ incident.it_acknowledged_by.username|default:'Unknown' }}{% else %}Unclaimed ticket{% endif %}">
                                 Manage
                                 {% if item.unread_comments_count > 0 %}
                                 <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
@@ -291,6 +389,42 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                 </tbody>
             </table>
         </div>
+        {% if incidents.paginator.num_pages > 1 %}
+        <div class="card-footer bg-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="small text-muted">
+                    Page {{ incidents.number }} of {{ incidents.paginator.num_pages }}
+                </div>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if incidents.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ incidents.previous_page_number }}">Previous</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                        {% endif %}
+                        {% for num in incidents.paginator.page_range %}
+                            {% if num == incidents.number %}
+                                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                            {% else %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ num }}">{{ num }}</a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+                        {% if incidents.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ incidents.next_page_number }}">Next</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">Next</span></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 
