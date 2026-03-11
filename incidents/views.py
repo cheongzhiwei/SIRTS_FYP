@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 from django.contrib import messages
 from django.contrib.sessions.models import Session
 from .models import Incident, EmployeeProfile, Comment, CommentRead
@@ -17,6 +17,39 @@ from django.core.paginator import Paginator
 import json
 import requests
 import hashlib
+
+
+# Helper functions for role checking
+def is_manager(user):
+    """Check if user is in the Manager group"""
+    if not user.is_authenticated:
+        return False
+    try:
+        manager_group = Group.objects.get(name='Manager')
+        return manager_group in user.groups.all()
+    except Group.DoesNotExist:
+        return False
+
+
+def is_staff_member(user):
+    """Check if user is staff (is_staff flag)"""
+    return user.is_staff if user.is_authenticated else False
+
+
+def can_view_all_global_tickets(user):
+    """Check if user can view all tickets in global view"""
+    if not user.is_authenticated:
+        return False
+    # Check direct permission
+    if user.has_perm('incidents.view_all_global_tickets'):
+        return True
+    # Check if user is in a group with the permission
+    if user.groups.filter(permissions__codename='view_all_global_tickets').exists():
+        return True
+    # Managers automatically have this permission
+    if is_manager(user):
+        return True
+    return False
 
 
 @login_required
@@ -347,12 +380,17 @@ def report_incident(request):
 
 @login_required
 def admin_dashboard(request):
-    if not request.user.is_staff:
+    # Only staff members (is_staff=True) can access the dashboard
+    if not is_staff_member(request.user):
+        messages.error(request, "Access denied. Only staff members can view the dashboard.")
         return redirect('home')
 
-    # Basic Filtering Logic
-    incidents = Incident.objects.all().order_by('-created_at')
+    # Determine if user is a manager
+    user_is_manager = is_manager(request.user)
+    # Check if user has permission to view all global tickets
+    can_view_all_global = can_view_all_global_tickets(request.user)
     
+    # Get filter parameters
     status_filter = request.GET.get('status')
     user_filter = request.GET.get('user')
     period_filter = request.GET.get('period', 'all')
@@ -364,6 +402,22 @@ def admin_dashboard(request):
     view_serial = request.GET.get('view_serial')  # View all history for a specific laptop serial
     my_tickets = request.GET.get('my_tickets')  # Filter to show only tickets claimed by current user
     ticket_type = request.GET.get('ticket_type', 'active')  # 'active' or 'finished' for My Tickets view
+    
+    # Basic Filtering Logic
+    # Users with 'view_all_global_tickets' permission see all tickets
+    # Others see only unassigned open tickets OR their own tickets
+    if my_tickets == '1':
+        # My Tickets view: show only tickets claimed by current user
+        incidents = Incident.objects.filter(it_acknowledged_by=request.user).order_by('-created_at')
+    elif can_view_all_global or user_is_manager:
+        # Users with permission or managers see all tickets in global view
+        incidents = Incident.objects.all().order_by('-created_at')
+    else:
+        # Staff global view: show only unassigned open tickets
+        incidents = Incident.objects.filter(
+            status='Open',
+            it_acknowledged=False
+        ).order_by('-created_at')
     page_size_param = request.GET.get('page_size', '10')
     try:
         page_size = int(page_size_param)
@@ -442,10 +496,8 @@ def admin_dashboard(request):
         else:
             incidents = incidents.filter(status=status_filter)
     
-    # My Tickets filtering - Show only tickets claimed by current user
+    # My Tickets sub-filtering: Active (In Progress) or Finished (Resolved/Closed)
     if my_tickets == '1':
-        incidents = incidents.filter(it_acknowledged_by=request.user)
-        # Sub-filter: Active (In Progress) or Finished (Resolved/Closed)
         if ticket_type == 'active':
             incidents = incidents.filter(status='In Progress')
         elif ticket_type == 'finished':
@@ -480,7 +532,16 @@ def admin_dashboard(request):
 
     # Summary Counts - apply ALL filters (except status) to status bar counts
     # This ensures status bars reflect the current filter context
-    status_bar_base = Incident.objects.all()
+    # Users with permission see all tickets, others see counts based on current view
+    if my_tickets == '1':
+        # My Tickets view: show counts for user's own tickets
+        status_bar_base = Incident.objects.filter(it_acknowledged_by=request.user)
+    elif can_view_all_global or user_is_manager:
+        # Users with permission or managers see all tickets
+        status_bar_base = Incident.objects.all()
+    else:
+        # Staff global view: show counts for unassigned open tickets only
+        status_bar_base = Incident.objects.filter(status='Open', it_acknowledged=False)
     
     # If viewing specific user or serial history, show all history (no period filter)
     if view_user:
@@ -599,6 +660,8 @@ def admin_dashboard(request):
         'my_tickets': my_tickets,  # Whether showing My Tickets view
         'ticket_type': ticket_type,  # 'active' or 'finished' for My Tickets
         'priority_filter': priority_filter,
+        'is_manager': user_is_manager,  # Pass manager status to template
+        'can_view_all_global': can_view_all_global,  # Pass permission status to template
     }
     return render(request, 'admin_dashboard.html', context)
 @login_required
@@ -607,11 +670,15 @@ def manage_ticket(request, ticket_id):
     Dashboard view for managing tickets.
     Only allows updating status and admin notes.
     Edit and delete must be done in Django admin.
+    Managers can assign tickets to staff members.
     """
-    if not request.user.is_staff:
+    # Only staff members can manage tickets
+    if not is_staff_member(request.user):
+        messages.error(request, "Access denied. Only staff members can manage tickets.")
         return redirect('home')
         
     ticket = Incident.objects.prefetch_related('comments').get(id=ticket_id)
+    user_is_manager = is_manager(request.user)
     
     # Mark comments as read when viewing the ticket
     CommentRead.objects.update_or_create(
@@ -621,6 +688,37 @@ def manage_ticket(request, ticket_id):
     )
     
     if request.method == 'POST':
+        # Check if this is a ticket assignment (managers only)
+        if 'assign_to' in request.POST and user_is_manager:
+            assigned_user_id = request.POST.get('assign_to')
+            if assigned_user_id:
+                try:
+                    assigned_user = User.objects.get(id=assigned_user_id)
+                    # Verify the user is staff (not a regular user)
+                    if is_staff_member(assigned_user):
+                        ticket.it_acknowledged = True
+                        ticket.it_acknowledged_by = assigned_user
+                        ticket.it_acknowledged_at = timezone.now()
+                        if ticket.status == 'Open':
+                            ticket.status = 'In Progress'
+                        ticket.save()
+                        messages.success(request, f"Ticket #{ticket.id} assigned to {assigned_user.username}.")
+                        return redirect('manage_ticket', ticket_id=ticket.id)
+                    else:
+                        messages.error(request, "Can only assign tickets to staff members, not regular users.")
+                except User.DoesNotExist:
+                    messages.error(request, "Selected user not found.")
+            else:
+                # Unassign ticket
+                ticket.it_acknowledged = False
+                ticket.it_acknowledged_by = None
+                ticket.it_acknowledged_at = None
+                if ticket.status == 'In Progress':
+                    ticket.status = 'Open'
+                ticket.save()
+                messages.success(request, f"Ticket #{ticket.id} unassigned.")
+                return redirect('manage_ticket', ticket_id=ticket.id)
+        
         # Check if this is a status update (not a comment or acknowledgment)
         # Status update form has 'status' field and optionally 'update_status' button, 
         # comment form has 'message' field, acknowledge form goes to different URL
@@ -666,14 +764,26 @@ def manage_ticket(request, ticket_id):
                 return redirect('admin_dashboard')
             except Exception as e:
                 messages.error(request, f"Error updating ticket: {str(e)}")
-                return render(request, 'manage_ticket.html', {'ticket': ticket})
+                # Get staff users for assignment dropdown (managers only)
+                staff_users = User.objects.filter(is_staff=True).exclude(id=request.user.id).order_by('username') if user_is_manager else []
+                return render(request, 'manage_ticket.html', {
+                    'ticket': ticket,
+                    'staff_users': staff_users,
+                    'is_manager': user_is_manager
+                })
 
-    return render(request, 'manage_ticket.html', {'ticket': ticket})
+    # Get staff users for assignment dropdown (managers only)
+    staff_users = User.objects.filter(is_staff=True).exclude(id=request.user.id).order_by('username') if user_is_manager else []
+    return render(request, 'manage_ticket.html', {
+        'ticket': ticket,
+        'staff_users': staff_users,
+        'is_manager': user_is_manager
+    })
 
 def user_login(request):
     # If user is already logged in, redirect them
     if request.user.is_authenticated:
-        if request.user.is_staff:
+        if is_staff_member(request.user):
             return redirect('admin_dashboard')
         return redirect('home')
     
@@ -684,8 +794,8 @@ def user_login(request):
         if user is not None:
             if user.is_active:
                 login(request, user)
-                # Redirect staff users to admin dashboard, others to home
-                if user.is_staff:
+                # Redirect staff to admin dashboard, others to home
+                if is_staff_member(user):
                     return redirect('admin_dashboard')
                 return redirect('home')
             else:
@@ -714,16 +824,21 @@ from django.http import JsonResponse
 
 @login_required
 def incident_calendar_data(request):
-    incidents = Incident.objects.all()
-     
     """
     Returns JSON data for calendar events.
     Shows incidents with created date and resolved date (if available).
     Like Google Calendar, shows when incidents were created and when they were resolved.
     Supports filtering by status and resolved_by admin.
+    Only staff can access calendar data.
     """
-    if not request.user.is_staff:
+    if not is_staff_member(request.user):
         return JsonResponse([], safe=False)
+    
+    incidents = Incident.objects.all()
+    
+    # Managers see all tickets, Staff see only their own tickets
+    if not is_manager(request.user):
+        incidents = incidents.filter(it_acknowledged_by=request.user)
     
     # Get filter parameters
     status_filter = request.GET.get('status', '')
@@ -777,15 +892,14 @@ def incident_calendar(request):
     """
     Renders the calendar page.
     Shows incidents when created and when resolved (like Google Calendar).
+    Only staff can access the calendar view.
     """
-    if not request.user.is_staff:
+    if not is_staff_member(request.user):
+        messages.error(request, "Access denied. Only staff members can view the calendar.")
         return redirect('home')
     
-    # Get all staff members from Django admin (is_staff=True)
-    # This includes all staff like "admin" and "admin 1"
-    all_staff_members = User.objects.filter(
-        is_staff=True
-    ).distinct().order_by('username')
+    # Get all staff members
+    all_staff_members = User.objects.filter(is_staff=True).order_by('username')
     
     # Get current filter values
     status_filter = request.GET.get('status', '')
@@ -988,7 +1102,7 @@ def acknowledge_ticket(request, ticket_id):
     Allow IT staff to acknowledge (claim) a ticket from the webapp.
     Implements ticket claiming logic: only unclaimed tickets can be claimed.
     """
-    if not request.user.is_staff:
+    if not is_staff_member(request.user):
         messages.error(request, "Only IT staff can acknowledge tickets.")
         return redirect('home')
     
@@ -1028,13 +1142,13 @@ def add_comment(request, ticket_id):
         ticket = Incident.objects.get(id=ticket_id)
     except Incident.DoesNotExist:
         messages.error(request, "Ticket not found.")
-        if request.user.is_staff:
+        if is_staff_member(request.user):
             return redirect('admin_dashboard')
         return redirect('home')
     
     # Check if user has permission to comment on this ticket
-    # Users can comment on their own tickets, IT staff can comment on any ticket
-    if not request.user.is_staff and ticket.user != request.user:
+    # Users can comment on their own tickets, staff members can comment on any ticket
+    if not is_staff_member(request.user) and ticket.user != request.user:
         messages.error(request, "You can only comment on your own tickets.")
         return redirect('home')
     
@@ -1058,7 +1172,7 @@ def add_comment(request, ticket_id):
             messages.success(request, "Comment added successfully. You can leave another comment if needed.")
     
     # Redirect back to the appropriate page
-    if request.user.is_staff:
+    if is_staff_member(request.user):
         return redirect('manage_ticket', ticket_id=ticket_id)
     else:
         return redirect('home')
@@ -1075,7 +1189,7 @@ def mark_comments_read(request, ticket_id):
         return JsonResponse({'success': False, 'error': 'Ticket not found'}, status=404)
     
     # Check if user has permission to view this ticket
-    if not request.user.is_staff and ticket.user != request.user:
+    if not is_staff_member(request.user) and ticket.user != request.user:
         return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
     
     # Mark comments as read

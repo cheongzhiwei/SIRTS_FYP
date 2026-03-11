@@ -95,6 +95,11 @@ class Incident(models.Model):
         help_text="AI-predicted category for the incident"
     )
 
+    class Meta:
+        permissions = [
+            ('view_all_global_tickets', 'Can view all tickets in global view (not just open tickets)'),
+        ]
+
     def __str__(self):
         return f"{self.title} - {self.status}"
 

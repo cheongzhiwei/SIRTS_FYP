@@ -1,10 +1,10 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.contrib.auth.models import User
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin, GroupAdmin as BaseGroupAdmin
+from django.contrib.auth.models import User, Group
 from django.contrib.admin import DateFieldListFilter
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Q, Count
 from datetime import datetime, timedelta
 from .models import Incident, EmployeeProfile, UserProfile, Comment, CommentRead
 
@@ -109,7 +109,7 @@ class UserAdmin(BaseUserAdmin):
     inlines = [EmployeeProfileInline, IncidentInline]
     
     # 1. Define exactly which columns to show in the list view
-    list_display = ('id', 'username', 'get_department', 'get_laptop_model', 'email', 'is_staff', 'is_active')
+    list_display = ('id', 'username', 'get_manager_status', 'get_department', 'get_laptop_model', 'email', 'is_staff', 'is_active')
 
     # 2. Add Filters and Search (Optional but recommended)
     # Only filter by is_staff to avoid issues with missing relationships
@@ -135,6 +135,18 @@ class UserAdmin(BaseUserAdmin):
     
     # Label the column header nicely
     get_department.short_description = 'Department'
+    
+    # 3.5. Helper function to check if user is in Manager group
+    def get_manager_status(self, obj):
+        try:
+            from django.contrib.auth.models import Group
+            manager_group = Group.objects.get(name='Manager')
+            if manager_group in obj.groups.all():
+                return "Manager"
+        except:
+            pass
+        return "-"
+    get_manager_status.short_description = 'Manager'
     
     # 4. Helper function to fetch the Laptop Model from the Profile
     def get_laptop_model(self, obj):
@@ -353,8 +365,53 @@ class CommentReadAdmin(admin.ModelAdmin):
         # Hide from admin index but still allow direct access if needed
         return {}
 
+# 9. Custom Group Admin with filtering
+class GroupAdmin(BaseGroupAdmin):
+    list_display = ('name', 'get_user_count', 'get_manager_status', 'has_view_all_permission')
+    list_filter = ('name',)
+    search_fields = ('name',)
+    ordering = ('name',)
+    filter_horizontal = ('permissions',)  # Make permissions selection easier
+    
+    def get_user_count(self, obj):
+        """Display number of users in the group"""
+        count = obj.user_set.count()
+        return count
+    get_user_count.short_description = 'Users'
+    get_user_count.admin_order_field = 'user_count'
+    
+    def get_manager_status(self, obj):
+        """Check if this is the Manager group"""
+        if obj.name == 'Manager':
+            return "✓ Manager Group"
+        return "-"
+    get_manager_status.short_description = 'Type'
+    get_manager_status.admin_order_field = 'name'
+    
+    def has_view_all_permission(self, obj):
+        """Check if group has 'view_all_global_tickets' permission"""
+        from django.contrib.auth.models import Permission
+        try:
+            permission = Permission.objects.get(
+                codename='view_all_global_tickets',
+                content_type__app_label='incidents'
+            )
+            if permission in obj.permissions.all():
+                return "✓ Can View All"
+            return "Open Only"
+        except Permission.DoesNotExist:
+            return "N/A"
+    has_view_all_permission.short_description = 'Global View'
+    
+    def get_queryset(self, request):
+        """Annotate queryset with user count for sorting"""
+        qs = super().get_queryset(request)
+        return qs.annotate(user_count=Count('user'))
+
 admin.site.unregister(User)
+admin.site.unregister(Group)
 admin.site.register(User, UserAdmin)
+admin.site.register(Group, GroupAdmin)
 admin.site.register(Incident, IncidentAdmin)
 # Register but hide from sidebar - they're accessible via Incident inline only
 admin.site.register(Comment, CommentAdmin)
