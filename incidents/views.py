@@ -5,7 +5,13 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User, Group
 from django.contrib import messages
 from django.contrib.sessions.models import Session
-from .models import Incident, EmployeeProfile, Comment, CommentRead
+from .models import (
+    Incident,
+    EmployeeProfile,
+    Comment,
+    CommentRead,
+    incident_attachment_filename_is_image,
+)
 from datetime import datetime, timedelta, date
 from django.utils import timezone
 from django.http import JsonResponse
@@ -14,6 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.conf import settings
 from django.core.paginator import Paginator
+from urllib.parse import urlencode
 import json
 import requests
 import hashlib
@@ -160,9 +167,25 @@ def home(request):
         
         processed_incidents.append(incident_dict)
 
+    # If opening a ticket from Mail, jump to the page that contains it so the modal exists in the DOM.
+    page_number = request.GET.get('page', 1)
+    try:
+        page_number = int(page_number)
+    except (TypeError, ValueError):
+        page_number = 1
+    open_ticket_raw = request.GET.get('open_ticket')
+    if open_ticket_raw:
+        try:
+            open_tid = int(open_ticket_raw)
+            for idx, item in enumerate(processed_incidents):
+                if item['incident'].id == open_tid:
+                    page_number = (idx // page_size) + 1
+                    break
+        except (TypeError, ValueError):
+            pass
+
     # Pagination for processed incidents
     paginator = Paginator(processed_incidents, page_size)
-    page_number = request.GET.get('page', 1)
     processed_page = paginator.get_page(page_number)
 
     # Build base query string for pagination links (exclude page)
@@ -261,9 +284,14 @@ def report_incident(request):
         file_hash = ""
         attachment_file = None
         
+        skip_virustotal_for_attachment = False
         if 'attachment' in request.FILES:
             file_obj = request.FILES['attachment']
-            
+
+            skip_virustotal_for_attachment = incident_attachment_filename_is_image(
+                getattr(file_obj, "name", "") or ""
+            ) or (getattr(file_obj, "content_type", "") or "").lower().startswith("image/")
+
             # Generate SHA256 hash for VirusTotal scanning
             # Read file content into memory for hashing (Django will handle saving)
             file_content = b''
@@ -366,7 +394,8 @@ def report_incident(request):
             "reported_by_id": request.user.id,  # Include user ID for quarantine functionality
             "user_id": request.user.id,  # Alternative field name
             "file_hash": file_hash if file_hash else "",  # Include file hash for VirusTotal
-            "file_url": file_url  # File URL for n8n to download and upload to VirusTotal
+            "file_url": file_url,  # File URL for n8n to download and upload to VirusTotal
+            "skip_virustotal": bool(skip_virustotal_for_attachment and file_hash),
         }
         
         try:
@@ -633,6 +662,11 @@ def admin_dashboard(request):
             'incident': incident,
             'unread_comments_count': unread_count
         })
+
+    # Dashboard notification cards for tickets with updated comments
+    comment_notifications = [
+        item for item in incidents_with_unread if item['unread_comments_count'] > 0
+    ]
     
     # Build base query string for pagination links (exclude page)
     query_params = request.GET.copy()
@@ -643,6 +677,7 @@ def admin_dashboard(request):
     context = {
         'incidents': incidents_page,
         'incidents_with_unread': incidents_with_unread,  # For template to show notifications
+        'comment_notifications': comment_notifications,
         'open_count': open_count,
         'resolved_count': resolved_count,
         'closed_count': closed_count,
@@ -1177,6 +1212,77 @@ def add_comment(request, ticket_id):
     else:
         return redirect('home')
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_ticket_comment_from_n8n(request):
+    """
+    API endpoint for n8n to add an internal system comment to a ticket.
+    Expects JSON payload: {"ticket_id": <number>, "message": "<text>"}
+    """
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid JSON payload'
+        }, status=400)
+
+    ticket_id = data.get('ticket_id')
+    message = (data.get('message') or '').strip()
+
+    if not ticket_id:
+        return JsonResponse({
+            'status': 'error',
+            'message': "Field 'ticket_id' is required"
+        }, status=400)
+
+    if not message:
+        return JsonResponse({
+            'status': 'error',
+            'message': "Field 'message' is required"
+        }, status=400)
+
+    try:
+        if isinstance(ticket_id, str):
+            ticket_id = int(ticket_id.strip())
+        elif not isinstance(ticket_id, int):
+            ticket_id = int(ticket_id)
+    except (ValueError, TypeError):
+        return JsonResponse({
+            'status': 'error',
+            'message': f"Field 'ticket_id' must be a number, got: {type(ticket_id).__name__}"
+        }, status=400)
+
+    try:
+        ticket = Incident.objects.get(id=ticket_id)
+    except Incident.DoesNotExist:
+        return JsonResponse({
+            'status': 'error',
+            'message': f'Incident #{ticket_id} not found'
+        }, status=404)
+
+    system_user, _ = User.objects.get_or_create(
+        username='security_bot',
+        defaults={
+            'email': 'security-bot@example.local',
+            'is_staff': True,
+            'is_active': True,
+        }
+    )
+
+    comment = Comment.objects.create(
+        incident=ticket,
+        user=system_user,
+        message=message
+    )
+
+    return JsonResponse({
+        'status': 'success',
+        'message': f'Comment added to ticket #{ticket_id}',
+        'ticket_id': ticket_id,
+        'comment_id': comment.id
+    })
+
 @login_required
 def mark_comments_read(request, ticket_id):
     """
@@ -1200,6 +1306,83 @@ def mark_comments_read(request, ticket_id):
     )
     
     return JsonResponse({'success': True})
+
+@login_required
+def mail_notifications(request):
+    """
+    Show unread comment notifications from other users only (read items disappear from the list).
+    """
+    incidents = Incident.objects.filter(user=request.user).prefetch_related('comments').order_by('-created_at')
+    notifications = []
+
+    for incident in incidents:
+        try:
+            read_state = CommentRead.objects.get(user=request.user, incident=incident)
+            unread_comments = incident.comments.filter(
+                created_at__gt=read_state.last_read_at
+            ).exclude(user=request.user).order_by('-created_at')
+        except CommentRead.DoesNotExist:
+            unread_comments = incident.comments.exclude(user=request.user).order_by('-created_at')
+
+        if not unread_comments.exists():
+            continue
+
+        latest_comment = unread_comments.first()
+        notifications.append({
+            'incident': incident,
+            'latest_comment': latest_comment,
+            'unread_count': unread_comments.count(),
+        })
+
+    notifications.sort(key=lambda item: item['latest_comment'].created_at, reverse=True)
+
+    return render(request, 'mail_notifications.html', {
+        'notifications': notifications,
+    })
+
+@login_required
+def ticket_detail(request, ticket_id):
+    """
+    Detail page for a user's own ticket.
+    """
+    try:
+        ticket = Incident.objects.prefetch_related('comments').get(id=ticket_id, user=request.user)
+    except Incident.DoesNotExist:
+        messages.error(request, "Ticket not found.")
+        return redirect('home')
+
+    # Opening the detail page means comments are read.
+    CommentRead.objects.update_or_create(
+        user=request.user,
+        incident=ticket,
+        defaults={'last_read_at': timezone.now()}
+    )
+
+    return render(request, 'ticket_detail.html', {
+        'ticket': ticket,
+    })
+
+@login_required
+def open_mail_notification(request, ticket_id):
+    """
+    Go to My History with filters matching the app default "all" view and open the ticket modal.
+    Comments are marked read when the user opens the ticket on that page (see home modal + markCommentsRead).
+    """
+    try:
+        ticket = Incident.objects.get(id=ticket_id, user=request.user)
+    except Incident.DoesNotExist:
+        messages.error(request, "Ticket not found.")
+        return redirect('mail_notifications')
+
+    params = [
+        ('period', 'all'),
+        ('from', ''),
+        ('to', ''),
+        ('status', ''),
+        ('it_status', ''),
+        ('open_ticket', str(ticket.id)),
+    ]
+    return redirect(f"{reverse('home')}?{urlencode(params)}")
 
 @csrf_exempt
 @require_http_methods(["POST"])

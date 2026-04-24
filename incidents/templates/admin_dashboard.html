@@ -72,6 +72,79 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
     padding: 0.25rem 0.75rem;
     font-size: 0.875rem;
 }
+
+/* Floating "new message" notification circle */
+.new-message-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    border: none;
+    background: #6c757d;
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    z-index: 1100;
+    cursor: pointer;
+}
+
+.new-message-fab.has-unread {
+    background: #dc3545;
+    animation: pulse-alert 1.6s infinite;
+}
+
+.new-message-badge {
+    position: absolute;
+    top: -4px;
+    right: -2px;
+    min-width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: #ffc107;
+    color: #212529;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    border: 2px solid #fff;
+}
+
+.new-message-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 96px;
+    width: min(420px, calc(100vw - 36px));
+    max-height: 55vh;
+    overflow-y: auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+    z-index: 1101;
+    border: 1px solid #e9ecef;
+}
+
+.new-message-panel-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+.new-message-panel.d-none {
+    display: none;
+}
+
+@keyframes pulse-alert {
+    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.45); }
+    70% { box-shadow: 0 0 0 16px rgba(220, 53, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
 </style>
 {% endblock %}
 
@@ -249,6 +322,51 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
         </div>
     </div>
 
+    {% if comment_notifications %}
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-warning-subtle d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold text-dark">
+                <i class="fas fa-bell"></i> Updated Comments
+            </h6>
+            <span class="badge bg-danger">{{ comment_notifications|length }}</span>
+        </div>
+        <div class="list-group list-group-flush">
+            {% for item in comment_notifications %}
+            <a href="{% url 'manage_ticket' item.incident.id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center comment-notification-link" data-ticket-id="{{ item.incident.id }}">
+                <span>
+                    Ticket #{{ item.incident.id }} - {{ item.incident.title|truncatechars:60 }}
+                </span>
+                <span class="badge bg-danger rounded-pill">{{ item.unread_comments_count }} new</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <button id="newMessageFab" type="button" class="new-message-fab" title="You have new comment notifications" data-unread-count="{{ comment_notifications|length }}">
+        <i class="fas fa-comment-dots"></i>
+        <span class="new-message-badge">{{ comment_notifications|length }}</span>
+    </button>
+    <div id="newMessagePanel" class="new-message-panel d-none">
+        <div class="new-message-panel-header">
+            New Messages ({{ comment_notifications|length }})
+        </div>
+        <div class="list-group list-group-flush">
+            {% for item in comment_notifications %}
+            <a href="{% url 'manage_ticket' item.incident.id %}" class="list-group-item list-group-item-action comment-notification-link" data-ticket-id="{{ item.incident.id }}">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Ticket #{{ item.incident.id }} - {{ item.incident.title|truncatechars:55 }}</span>
+                    <span class="badge bg-danger rounded-pill">{{ item.unread_comments_count }}</span>
+                </div>
+            </a>
+            {% empty %}
+            <div class="list-group-item text-muted small">
+                No new comments right now.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
     <div class="card border-0 shadow-sm">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0 fw-bold">
@@ -389,7 +507,7 @@ a[href*="view_user"] .fas, a[href*="view_serial"] .fas {
                                 </form>
                                 <br>
                             {% endif %}
-                            <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary btn-sm px-3 position-relative {% if not incident.it_acknowledged %}mt-1{% endif %}" onclick="markCommentsRead({{ incident.id }})" title="{% if incident.it_acknowledged %}Claimed by {{ incident.it_acknowledged_by.username|default:'Unknown' }}{% else %}Unclaimed ticket{% endif %}">
+                            <a href="{% url 'manage_ticket' incident.id %}" class="btn btn-primary btn-sm px-3 position-relative manage-ticket-link {% if not incident.it_acknowledged %}mt-1{% endif %}" data-ticket-id="{{ incident.id }}" title="{% if incident.it_acknowledged %}Claimed by {{ incident.it_acknowledged_by.username|default:'Unknown' }}{% else %}Unclaimed ticket{% endif %}">
                                 Manage
                                 {% if item.unread_comments_count > 0 %}
                                 <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
@@ -551,6 +669,38 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize date pickers
     flatpickr("#dateFrom", dateOptions);
     flatpickr("#dateTo", dateOptions);
+
+    // Mark comment notifications as read before navigation.
+    document.querySelectorAll('.comment-notification-link, .manage-ticket-link').forEach((link) => {
+        link.addEventListener('click', function() {
+            const ticketId = this.dataset.ticketId;
+            if (ticketId) {
+                markCommentsRead(ticketId);
+            }
+        });
+    });
+
+    const fab = document.getElementById('newMessageFab');
+    const panel = document.getElementById('newMessagePanel');
+    if (fab && panel) {
+        const unreadCount = Number(fab.dataset.unreadCount || 0);
+        if (unreadCount > 0) {
+            fab.classList.add('has-unread');
+        }
+
+        fab.addEventListener('click', function(e) {
+            e.stopPropagation();
+            panel.classList.toggle('d-none');
+        });
+
+        panel.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        document.addEventListener('click', function() {
+            panel.classList.add('d-none');
+        });
+    }
 });
 
 function clearDateFilters(button) {

@@ -56,12 +56,20 @@
                         </p>
                         <p><strong>Issue Description:</strong> <span class="text-muted">{{ ticket.description }}</span></p>
                         {% if ticket.attachment %}
-                        <p><strong>Attachment:</strong> 
+                        <p><strong>Attachment:</strong>
                             <a href="{{ ticket.attachment.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
                                 <i class="fas fa-download"></i> Download File
                             </a>
                             <small class="text-muted ms-2">({{ ticket.attachment.name|slice:"20:" }})</small>
                         </p>
+                        {% if ticket.attachment_is_image %}
+                        <div class="mb-3">
+                            <p class="fw-bold mb-2 small text-muted">Preview</p>
+                            <a href="{{ ticket.attachment.url }}" target="_blank" rel="noopener noreferrer" class="d-inline-block border rounded overflow-hidden bg-white">
+                                <img src="{{ ticket.attachment.url }}" alt="Ticket attachment" class="img-fluid d-block" style="max-height: 480px; max-width: 100%;">
+                            </a>
+                        </div>
+                        {% endif %}
                         {% if ticket.file_hash %}
                         <p><strong>File Hash (SHA256):</strong> 
                             <code class="small">{{ ticket.file_hash }}</code>

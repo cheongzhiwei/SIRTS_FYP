@@ -6,10 +6,14 @@ urlpatterns = [
     # Main user pages
     path('', views.home, name='home'), # ✅ This name must be 'home'
     path('report/', views.report_incident, name='report_incident'),
+    path('ticket/<int:ticket_id>/', views.ticket_detail, name='ticket_detail'),
+    path('mail/', views.mail_notifications, name='mail_notifications'),
+    path('mail/open/<int:ticket_id>/', views.open_mail_notification, name='open_mail_notification'),
     path('api/update-ticket/', views.update_incident_from_n8n, name='update_ticket'),
     path('api/quarantine-user/', views.quarantine_user_api, name='quarantine_user_api'),
     path('api/classify-ticket/', views.classify_ticket_api, name='classify_ticket_api'),
     path('api/update-ticket-category/', views.update_ticket_category, name='update_ticket_category'),
+    path('api/add-ticket-comment/', views.add_ticket_comment_from_n8n, name='add_ticket_comment_from_n8n'),
     
     
     # Admin pages

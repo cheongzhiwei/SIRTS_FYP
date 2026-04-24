@@ -59,7 +59,21 @@
                     </li>
 
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'report_incident' %}">Report Incident</a>
+                        <a class="nav-link" href="{% url 'report_incident' %}">
+                            Report Incident
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link pe-4" href="{% url 'mail_notifications' %}">
+                            <i class="fas fa-envelope"></i> Mail
+                            {% if mail_count > 0 %}
+                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                {{ mail_count }}
+                                <span class="visually-hidden">unread mail notifications</span>
+                            </span>
+                            {% endif %}
+                        </a>
                     </li>
                 </ul>
                 

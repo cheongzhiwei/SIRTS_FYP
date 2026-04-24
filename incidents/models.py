@@ -1,5 +1,16 @@
+import os
+
 from django.db import models
 from django.contrib.auth.models import User
+
+# Extensions treated as images (inline preview; skip VirusTotal in webhook)
+_IMAGE_ATTACHMENT_EXTS = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif"})
+
+
+def incident_attachment_filename_is_image(filename):
+    if not filename:
+        return False
+    return os.path.splitext(filename)[1].lower() in _IMAGE_ATTACHMENT_EXTS
 
 # 1. EMPLOYEE PROFILE (Extends the User model)
 class EmployeeProfile(models.Model):
@@ -99,6 +110,12 @@ class Incident(models.Model):
         permissions = [
             ('view_all_global_tickets', 'Can view all tickets in global view (not just open tickets)'),
         ]
+
+    @property
+    def attachment_is_image(self):
+        if not self.attachment:
+            return False
+        return incident_attachment_filename_is_image(self.attachment.name)
 
     def __str__(self):
         return f"{self.title} - {self.status}"

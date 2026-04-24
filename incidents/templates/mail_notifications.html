@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold mb-1"><i class="fas fa-envelope"></i> Mail Notifications</h3>
+            <p class="text-muted mb-0">Comments made by other users on your tickets.</p>
+        </div>
+        <a href="{% url 'home' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left"></i> Back to My History
+        </a>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            {% if notifications %}
+            <div class="list-group list-group-flush">
+                {% for item in notifications %}
+                <a href="{% url 'open_mail_notification' item.incident.id %}" class="list-group-item list-group-item-action py-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="me-3">
+                            <div class="fw-semibold">
+                                Ticket #{{ item.incident.id }} - {{ item.incident.title }}
+                            </div>
+                            <div class="small text-muted mb-1">
+                                From: {{ item.latest_comment.user.username }} at {{ item.latest_comment.created_at|date:"d/m/Y H:i" }}
+                            </div>
+                            <div class="small">{{ item.latest_comment.message|truncatewords:25 }}</div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-danger rounded-pill">{{ item.unread_count }} new</span>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                <i class="fas fa-inbox fa-2x mb-2"></i>
+                <p class="mb-0">No mail notifications yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

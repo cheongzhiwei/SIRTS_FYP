@@ -276,37 +276,8 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://host.docker.internal:8000/api/quarantine-user/",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\n  \"user_id\": {{ $node[\"Webhook\"].json.body.user_id }}\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [
-        64,
-        336
-      ],
-      "id": "63f66873-c8bd-4556-b4dc-e01d972f103d",
-      "name": "Quarantine User Auto",
-      "onError": "continueRegularOutput",
-      "notes": "🛡️ Automatically quarantines user when malware is detected. ⚠️ Error: Quarantine failed - check API endpoint and user_id"
-    },
-    {
-      "parameters": {
         "chatId": "8119891894",
-        "text": "=🚨 SECURITY ALERT! 🚨 A malicious file was detected in Ticket #{{ $node[\"Webhook\"].json.body.ticket_id }}. VirusTotal Detections: {{ $node[\"Query VirusTotal\"].json.data.attributes.last_analysis_stats.malicious }}/70\n\n⚠️ User {{ $node[\"Webhook\"].json.body.reported_by }} has been automatically quarantined (sessions killed, account deactivated).",
+        "text": "=🚨 URGENT SECURITY ALERT 🚨\n\nA malicious file was detected in Ticket #{{ $node[\"Webhook\"].json.body.ticket_id }}.\nVirusTotal Detections: {{ $node[\"Query VirusTotal\"].json.data.attributes.last_analysis_stats.malicious }}/70\nReported By: {{ $node[\"Webhook\"].json.body.reported_by }}\n\n⚠️ Immediate action required: investigate and resolve this incident urgently.",
         "replyMarkup": "inlineKeyboard",
         "inlineKeyboard": {
           "rows": [
@@ -341,6 +312,26 @@
           "name": "Telegram account"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/add-ticket-comment/",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ticket_id\": {{ $node[\"Webhook\"].json.body.ticket_id }},\n  \"message\": \"🚨 URGENT: Malicious file detected by VirusTotal ({{ $node[\\\"Query VirusTotal\\\"].json.data.attributes.last_analysis_stats.malicious }}/70). Please treat this as high priority and resolve immediately.\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        240,
+        432
+      ],
+      "id": "f0ce7f15-b69d-4428-a42b-d9f643723a74",
+      "name": "Notify Reported User",
+      "onError": "continueRegularOutput",
+      "notes": "Adds urgent malware comment to the ticket in webapp so dashboard shows updated comment notification."
     },
     {
       "parameters": {
@@ -465,7 +456,12 @@
       "main": [
         [
           {
-            "node": "Quarantine User Auto",
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Reported User",
             "type": "main",
             "index": 0
           }
@@ -473,17 +469,6 @@
         [
           {
             "node": "Send a text message2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Quarantine User Auto": {
-      "main": [
-        [
-          {
-            "node": "Send a text message1",
             "type": "main",
             "index": 0
           }

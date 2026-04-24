@@ -617,6 +617,18 @@ document.addEventListener('DOMContentLoaded', function() {
     
     flatpickr("#dateFrom", dateOptions);
     flatpickr("#dateTo", dateOptions);
+
+    // Open a specific ticket modal when coming from Mail.
+    const params = new URLSearchParams(window.location.search);
+    const openTicketId = params.get('open_ticket');
+    if (openTicketId) {
+        const targetModal = document.getElementById(`ticketModal${openTicketId}`);
+        if (targetModal && window.bootstrap && window.bootstrap.Modal) {
+            const modal = new window.bootstrap.Modal(targetModal);
+            modal.show();
+            markCommentsRead(openTicketId);
+        }
+    }
 });
 
 function clearDateFilters(button) {
